@@ -1,0 +1,12 @@
+# Virtual environment
+.venv/
+
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+
+# Kaggle / downloaded datasets
+*.pkl
