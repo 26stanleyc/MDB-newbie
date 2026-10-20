@@ -27,7 +27,7 @@ summarized in the status table; details follow per milestone. Design authority i
 | M6 Polish + accessibility | 1 | ✅ Done | tsc + lint + iOS bundle + expo-doctor (21/21) |
 | M7 Image quality check | 2 | ✅ Done | 98.9% pass on 180 real photos; degradations caught |
 | M8 Place matching | 2 | ✅ Done | 12/12 behavioral tests |
-| M9 Hold detection/segmentation | 2 | ✅ Done | own Mask R-CNN (MPS): AP50 29.4, mean IoU 0.87 cross-gym |
+| M9 Hold detection/segmentation | 2 | ✅ Done | own Mask R-CNN (MPS): AP50 84.0, mean IoU 0.88 cross-gym (corrected 2026-10-20; was 29.4 due to a label bug) |
 | M10 Route grouping by color | 2 | ✅ Done | per-route color purity 0.78 (cluster-then-name) |
 | M11 Hold depth dataset (DA3) | 2 | ✅ Built + run on real DA3 depth | 1,691 records; footprints plausible; protrusion needs per-hold crops |
 
@@ -146,7 +146,10 @@ a pre-trained Detectron2 hold/volume segmentation model + a triplet network.
   (`sm` + `bh-phone`, 201 GT instances) — **mask AP50 = 29.4**, **mean IoU = 0.87**.
   The high IoU means masks are accurate where detected; AP50 is held back by
   false positives (e.g. the crash pad read as a hold, overhang panel merged) and
-  cross-gym misses. Checkpoint: `artifacts/m9_maskrcnn.pt` (176 MB). Visualization:
+  cross-gym misses.
+  **⚠ Corrected 2026-10-20:** the 29.4 was an evaluation bug — `bh-phone` polygons were
+  drawn on half-size images, so that gym scored 0. With the fix the real numbers are
+  **mask AP50 84.0, mean IoU 0.88** (sm 76.7, bh-phone 96.8). See the 2026-10-20 changelog. Checkpoint: `artifacts/m9_maskrcnn.pt` (176 MB). Visualization:
   `artifacts/m9_eval_sample.png`.
 - **Outcome:** a working, Mac-trained detector that **removes the Detectron2
   dependency**. Good enough to proceed. Biggest future wins: more labeled images,
@@ -156,7 +159,7 @@ a pre-trained Detectron2 hold/volume segmentation model + a triplet network.
 *Ground-truth hold + volume masks on a training crop — the labels the detector learns from.*
 
 ![Mask R-CNN predictions on a held-out gym](progress_img/m9_holds_pred.jpg)
-*Our Mac-trained Mask R-CNN predicting hold outlines on a gym it never trained on (mask AP50 29.4, IoU 0.87). Note the crash pad false-positive bottom-left.*
+*Our Mac-trained Mask R-CNN predicting hold outlines on a gym it never trained on (mask AP50 84.0 after the 2026-10-20 label fix; originally reported as 29.4). Note the crash pad false-positive bottom-left.*
 
 ### M10 — Route grouping by color ✅ (per-route purity 0.78)
 - `pipeline/routes.py`: per-hold dominant color in **CIELAB** — erode mask to avoid
@@ -594,4 +597,15 @@ Upload `run_dust3r.py` + a zip of same-wall views, run on a GPU, get the fold an
   (`backend/multiview/sets/`, montage `verified_sets_montage.png`). Bundled
   `wall_sets_batch.zip`; the Colab notebook now **loops over every wall** (prints each
   fold angle, downloads one `out.zip`). Run it to get geometry for all 4 at once.
+- **2026-10-20 (audit + detection fix)** — Audited every stage honestly and wrote
+  **`IMPROVEMENT_PLAN.md`** (phased roadmap, data sources, keys needed, Google Maps gym
+  detection). While benchmarking against the unused pre-trained Detectron2 model
+  (`data/model/model_final.pth`, converted into torchvision by
+  `pipeline.holds.build_detectron2_model`; `evaluate_holds.py --detectron2`), found that
+  **both** models scored exactly 0 on `bh-phone`: its VIA polygons were drawn on a
+  half-size copy of each photo. Fixed via `ANNOTATION_SCALE` in `load_via_index`.
+  Corrected cross-gym mask AP50: **ours 84.0 / IoU 0.884; Detectron2 85.9 / IoU 0.860**
+  — effectively tied, so ours stays. Test set is only 4 images / 201 holds; enlarging it
+  is Phase 1 step 1. Rebuilt the 2 `bh-phone` depth records with the corrected masks.
+  (Training used `bh` only, so the trained model was unaffected.)
 - **(earlier)** — Built and verified Phase 1 M0–M6.

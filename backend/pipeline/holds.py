@@ -40,6 +40,11 @@ class Sample:
     instances: list[Instance]
 
 
+# bh-phone polygons were drawn on a half-size copy of each (EXIF-rotated) photo;
+# scale them up to the full-res image that cv2.imread returns.
+ANNOTATION_SCALE = {"bh-phone": 2.0}
+
+
 def load_via_index(data_dir: str, gyms: list[str]) -> list[Sample]:
     """Parse VIA CSVs into samples for images that have >=1 polygon."""
     samples: list[Sample] = []
@@ -60,7 +65,7 @@ def load_via_index(data_dir: str, gyms: list[str]) -> list[Sample]:
             if not xs or not ys or len(xs) < 3:
                 continue
             label = LABEL_IDS.get(attrs.get("hold_type", "hold"), 1)
-            pts = np.stack([xs, ys], axis=1).astype("float32")
+            pts = np.stack([xs, ys], axis=1).astype("float32") * ANNOTATION_SCALE.get(gym, 1.0)
             by_file.setdefault(row["filename"], []).append(Instance(pts, label))
         for fname, insts in by_file.items():
             path = os.path.join(data_dir, gym, fname)
@@ -166,6 +171,88 @@ def build_model(num_classes: int = 3):
     model.roi_heads.box_predictor = FastRCNNPredictor(in_feat, num_classes)
     in_mask = model.roi_heads.mask_predictor.conv5_mask.in_channels
     model.roi_heads.mask_predictor = MaskRCNNPredictor(in_mask, 256, num_classes)
+    return model
+
+
+def build_detectron2_model(path: str):
+    """Load the pre-trained Detectron2 hold model (data/model/model_final.pth) into
+    torchvision's Mask R-CNN, so it can be evaluated without installing Detectron2.
+
+    Same R50-FPN architecture; differences handled here: Detectron2's weight names,
+    class order (background last vs first), anchor order (size-major vs ratio-major,
+    2 sizes x 3 ratios per level), stride on the 1x1 conv (MSRA ResNet), BGR 0-255
+    input, and ROIAlignV2 (aligned=True).
+    """
+    import functools
+
+    import torchvision.ops.poolers as poolers
+    from torchvision.models.detection.anchor_utils import AnchorGenerator
+    from torchvision.ops import roi_align
+
+    poolers.roi_align = functools.partial(roi_align, aligned=True)  # ROIAlignV2
+
+    sizes, ratios = (32, 64), (0.5, 1.0, 2.0)
+    model = torchvision.models.detection.maskrcnn_resnet50_fpn(
+        weights=None, weights_backbone=None, num_classes=3,
+        rpn_anchor_generator=AnchorGenerator((sizes,) * 5, (ratios,) * 5),
+        # BGR channel flip is folded into conv1 below, so the model takes RGB in [0,1].
+        image_mean=[123.675 / 255, 116.28 / 255, 103.53 / 255], image_std=[1 / 255] * 3,
+        rpn_pre_nms_top_n_test=12000, rpn_post_nms_top_n_test=2000,
+        box_score_thresh=0.05, box_nms_thresh=0.5, box_detections_per_img=100,
+    )
+    # MSRA ResNet: the stride-2 conv is the 1x1, not the 3x3.
+    for layer in (model.backbone.body.layer2, model.backbone.body.layer3, model.backbone.body.layer4):
+        layer[0].conv1.stride, layer[0].conv2.stride = (2, 2), (1, 1)
+
+    d2 = torch.load(path, map_location="cpu", weights_only=True)["model"]
+    sd = {}
+
+    def bn(dst: str, src: str):
+        for p in ("weight", "bias", "running_mean", "running_var"):
+            sd[f"{dst}.{p}"] = d2[f"{src}.{p}"]
+
+    sd["backbone.body.conv1.weight"] = d2["backbone.bottom_up.stem.conv1.weight"].flip(1)  # BGR -> RGB
+    bn("backbone.body.bn1", "backbone.bottom_up.stem.conv1.norm")
+    for li, n_blocks in enumerate((3, 4, 6, 3)):
+        for b in range(n_blocks):
+            dst, src = f"backbone.body.layer{li + 1}.{b}", f"backbone.bottom_up.res{li + 2}.{b}"
+            for c in (1, 2, 3):
+                sd[f"{dst}.conv{c}.weight"] = d2[f"{src}.conv{c}.weight"]
+                bn(f"{dst}.bn{c}", f"{src}.conv{c}.norm")
+            if b == 0:
+                sd[f"{dst}.downsample.0.weight"] = d2[f"{src}.shortcut.weight"]
+                bn(f"{dst}.downsample.1", f"{src}.shortcut.norm")
+    for i in range(4):
+        for p in ("weight", "bias"):
+            sd[f"backbone.fpn.inner_blocks.{i}.0.{p}"] = d2[f"backbone.fpn_lateral{i + 2}.{p}"]
+            sd[f"backbone.fpn.layer_blocks.{i}.0.{p}"] = d2[f"backbone.fpn_output{i + 2}.{p}"]
+
+    # RPN: Detectron2 anchor index = size * n_ratios + ratio; torchvision = ratio * n_sizes + size.
+    perm = [s * len(ratios) + r for r in range(len(ratios)) for s in range(len(sizes))]
+    perm4 = [4 * a + k for a in perm for k in range(4)]
+    rpn = "proposal_generator.rpn_head"
+    for p in ("weight", "bias"):
+        sd[f"rpn.head.conv.0.0.{p}"] = d2[f"{rpn}.conv.{p}"]
+        sd[f"rpn.head.cls_logits.{p}"] = d2[f"{rpn}.objectness_logits.{p}"][perm]
+        sd[f"rpn.head.bbox_pred.{p}"] = d2[f"{rpn}.anchor_deltas.{p}"][perm4]
+
+    # Box head + predictor: background moves from last (Detectron2) to first.
+    for p in ("weight", "bias"):
+        sd[f"roi_heads.box_head.fc6.{p}"] = d2[f"roi_heads.box_head.fc1.{p}"]
+        sd[f"roi_heads.box_head.fc7.{p}"] = d2[f"roi_heads.box_head.fc2.{p}"]
+        cls = d2[f"roi_heads.box_predictor.cls_score.{p}"]
+        sd[f"roi_heads.box_predictor.cls_score.{p}"] = cls[[2, 0, 1]]
+        reg = d2[f"roi_heads.box_predictor.bbox_pred.{p}"]
+        sd[f"roi_heads.box_predictor.bbox_pred.{p}"] = torch.cat([torch.zeros_like(reg[:4]), reg])
+        for i in range(4):
+            sd[f"roi_heads.mask_head.{i}.0.{p}"] = d2[f"roi_heads.mask_head.mask_fcn{i + 1}.{p}"]
+        sd[f"roi_heads.mask_predictor.conv5_mask.{p}"] = d2[f"roi_heads.mask_head.deconv.{p}"]
+        logits = d2[f"roi_heads.mask_head.predictor.{p}"]
+        sd[f"roi_heads.mask_predictor.mask_fcn_logits.{p}"] = torch.cat([torch.zeros_like(logits[:1]), logits])
+
+    missing, unexpected = model.load_state_dict(sd, strict=False)
+    missing = [k for k in missing if not k.endswith("num_batches_tracked")]
+    assert not missing and not unexpected, (missing, unexpected)
     return model
 
 

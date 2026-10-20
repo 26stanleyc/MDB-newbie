@@ -28,3 +28,6 @@ backend/multiview/clouds/
 *.ply
 *.zip
 backend/multiview/sets/*/images/
+
+# Secrets (API keys)
+.env

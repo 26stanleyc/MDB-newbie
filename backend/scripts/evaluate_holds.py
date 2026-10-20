@@ -2,6 +2,7 @@
 
 Run from the parent "rock climbing" folder:
     PYTORCH_ENABLE_MPS_FALLBACK=1 ./.venv/bin/python backend/scripts/evaluate_holds.py
+    PYTORCH_ENABLE_MPS_FALLBACK=1 ./.venv/bin/python backend/scripts/evaluate_holds.py --detectron2 data/model/model_final.pth
 """
 
 from __future__ import annotations
@@ -21,7 +22,7 @@ BACKEND = os.path.dirname(HERE)
 ROOT = os.path.dirname(BACKEND)
 sys.path.insert(0, BACKEND)
 
-from pipeline.holds import HoldDataset, build_model, load_via_index  # noqa: E402
+from pipeline.holds import HoldDataset, build_detectron2_model, build_model, load_via_index  # noqa: E402
 
 DATA = os.path.join(ROOT, "data")
 ARTIFACTS = os.path.join(BACKEND, "artifacts")
@@ -55,6 +56,8 @@ def ap50(all_scores, all_tp, n_gt) -> float:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--ckpt", default=os.path.join(ARTIFACTS, "m9_maskrcnn.pt"))
+    ap.add_argument("--detectron2", metavar="PTH", help="evaluate a Detectron2 checkpoint instead "
+                    "(e.g. data/model/model_final.pth)")
     ap.add_argument("--gyms", nargs="+", default=["sm", "bh-phone"])
     ap.add_argument("--score", type=float, default=0.5, help="score thresh for mean-IoU + viz")
     ap.add_argument("--device", default="auto")
@@ -64,9 +67,12 @@ def main() -> int:
         "mps" if (args.device == "auto" and torch.backends.mps.is_available())
         else ("cpu" if args.device == "auto" else args.device)
     )
-    model = build_model().to(device)
-    state = torch.load(args.ckpt, map_location=device)
-    model.load_state_dict(state["model"])
+    if args.detectron2:
+        model = build_detectron2_model(args.detectron2).to(device)
+    else:
+        model = build_model().to(device)
+        state = torch.load(args.ckpt, map_location=device)
+        model.load_state_dict(state["model"])
     model.eval()
 
     ds = HoldDataset(load_via_index(DATA, args.gyms), train=False)
@@ -75,6 +81,7 @@ def main() -> int:
     scores_all, tp_all, n_gt = [], [], 0
     ious_matched = []
     first_viz = True
+    viz_path = os.path.join(ARTIFACTS, "m9_eval_sample_detectron2.png" if args.detectron2 else "m9_eval_sample.png")
 
     for idx in range(len(ds)):
         image, target = ds[idx]
@@ -110,7 +117,7 @@ def main() -> int:
                 cnts, _ = cv2.findContours(pm.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
                 cv2.drawContours(rgb, cnts, -1, (0, 255, 0), 2)
             os.makedirs(ARTIFACTS, exist_ok=True)
-            cv2.imwrite(os.path.join(ARTIFACTS, "m9_eval_sample.png"), cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
+            cv2.imwrite(viz_path, cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR))
 
     ap_50 = ap50(scores_all, tp_all, n_gt)
     mean_iou = float(np.mean(ious_matched)) if ious_matched else 0.0
@@ -118,7 +125,7 @@ def main() -> int:
     print(f"\nGT instances: {n_gt} | predictions: {len(scores_all)}")
     print(f"mask AP50: {ap_50 * 100:.1f}")
     print(f"mean IoU (matched): {mean_iou:.3f}")
-    print(f"viz saved: {os.path.join(ARTIFACTS, 'm9_eval_sample.png')} "
+    print(f"viz saved: {viz_path} "
           f"({preds_kept} preds >= {args.score})")
     print("\nM9 eval:", "PASS" if ap_50 >= 0.20 else "WEAK (needs more training/tuning)")
     return 0

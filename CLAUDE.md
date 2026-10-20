@@ -9,7 +9,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **`rc/`** — Expo / React Native iOS app (Phase 1, built against a mock API). It is a **separate nested git repo** with its own `rc/CLAUDE.md` + `rc/AGENTS.md` — follow those when working there. Note: `rc/CLAUDE.md` still says "do not begin Phase 2"; that gate was crossed on 2026-10-04 at Stanley's instruction.
 - **`backend/`** — Python ML pipeline (Phase 2), milestones M7–M12. Lives in this parent repo next to the data and models.
 
-**Read `PROGRESS.md` before backend work.** It is the running log of every milestone: what was built, validation numbers, decisions, and a "What was tried that didn't work" section. Append to it (status table + milestone section + changelog) when finishing meaningful work. Design authority is `rc/Capitan — Design Document v2.md` (Draft v4). `backend/README.md` and the root `README.md` are stale.
+**Read `PROGRESS.md` before backend work.** It is the running log of every milestone: what was built, validation numbers, decisions, and a "What was tried that didn't work" section. Append to it (status table + milestone section + changelog) when finishing meaningful work. **`IMPROVEMENT_PLAN.md`** is the roadmap (phases, targets, data sources, keys needed). Design authority is `rc/Capitan — Design Document v2.md` (Draft v4).
+
+Note: `bh-phone` VIA polygons are at half resolution; `load_via_index` rescales them via `ANNOTATION_SCALE`. Any new annotation parser must do the same.
 
 ## Commands
 

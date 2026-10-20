@@ -30,7 +30,7 @@ docstring. Depth Anything 3 and DUSt3R need a GPU and run on Colab
 |---|---|---|---|
 | M7 image quality | `pipeline/quality.py` | `scripts/evaluate_quality.py` | 178/180 real photos pass |
 | M8 place matching | `pipeline/places.py` | `scripts/evaluate_places.py` | 12/12 |
-| M9 hold detection | `pipeline/holds.py` (Mask R-CNN, MPS) | `scripts/train_holds.py`, `scripts/evaluate_holds.py` | mask AP50 29.4, IoU 0.87 cross-gym |
+| M9 hold detection | `pipeline/holds.py` (Mask R-CNN, MPS) | `scripts/train_holds.py`, `scripts/evaluate_holds.py` | mask AP50 84.0, IoU 0.88 cross-gym (4 test images) |
 | M10 route colors | `pipeline/routes.py` | `scripts/evaluate_routes.py` | per-route purity 0.78 |
 | M11 hold depth (DA3) | `pipeline/depth.py`, `depth_schema.py`, `depth_model.py` | `scripts/validate_depth_synthetic.py`, `scripts/build_depth_records.py` | 14/14 synthetic; 1,691 real records |
 | Grasp / relief | `pipeline/hold_relief.py`, `grasp.py`, `fused_depth.py` | `scripts/build_grasp.py`, `scripts/aggregate_depth_fused.py` | grasp point on 147/148 holds |
