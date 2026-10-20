@@ -12,7 +12,7 @@ Work is split into **Phase 1 (frontend, mocked backend, M0–M6)** and **Phase 2
 
 When something isn't specified in the design doc, **ask Stanley — do not assume** (doc §11).
 
-**Current status:** Phase 1 (M0–M6) is built against the mock API and passes tsc, lint, `expo export` (iOS), and `expo-doctor`; on-device sign-off in Expo Go is still pending. Stanley approved Phase 2 on 2026-10-04 — it lives in the parent folder's `backend/` (Python), not in this repo. The app still runs on the mock API; wiring the real backend means adding an HTTP client behind `API_MODE` (see below). Full build log: `../PROGRESS.md`.
+**Current status:** Phase 1 (M0–M6) is built against the mock API and passes tsc, lint, `expo export` (iOS), and `expo-doctor`; on-device sign-off in Expo Go is still pending. Stanley approved Phase 2 on 2026-10-04 — it lives in the parent folder's `backend/` (Python), not in this repo. The app now talks to the real backend by default (`src/api/http.ts`; run the server from the parent folder — see `../CLAUDE.md`). `EXPO_PUBLIC_API_MODE=mock` switches back to the in-app mock; the dev-menu failure toggles only affect the mock. Full build log: `../PROGRESS.md`.
 
 ## Commands
 
@@ -35,7 +35,8 @@ Every backend call goes through `api` imported from `@/api`. The design is built
 - `mock.ts` — Phase 1 implementation of `CapitanApi`: realistic 1–3s delays, in-memory mutable state, corrections that regroup routes by hold color.
 - `fixtures.ts` — hand-labeled fixture data (Bay Area gyms, 2 wall scans with holds/routes). **The wall images are generated placeholders** (`assets/fixtures/`); replace with real gym photos + re-labeled holds before the M3 results screen.
 - `dev-flags.ts` — toggles to force quality-check / processing / no-routes failures for exercising error paths.
-- `index.ts` — selects the implementation via the single flag `API_MODE` in `src/config/app.ts`'s sibling `src/config/api.ts`. Phase 2 adds an HTTP client here.
+- `http.ts` — Phase 2 implementation: calls the Python backend at `API_URL` (defaults to the Expo dev machine's IP, port 8000; override `EXPO_PUBLIC_API_URL`). Auth/profile still delegate to the mock.
+- `index.ts` — selects the implementation via `API_MODE` in `src/config/api.ts` (default `http`, `EXPO_PUBLIC_API_MODE=mock` for the mock).
 
 ### Theme & design system
 - `src/theme/` is the **canonical** token set (colors, spacing/radius, typography, `useThemeColors()`); import from `@/theme`. It is *exported from* `design-system/capitan/MASTER.md`, which is the source of design decisions — **read MASTER.md (and any `design-system/capitan/pages/<screen>.md` override) before building a screen.**
