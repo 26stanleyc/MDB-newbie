@@ -38,7 +38,11 @@ correction screens are the labeling tool** once the real backend is wired in.
 **0b. End-to-end eval** (`backend/scripts/evaluate_e2e.py`): photo → holds → routes →
 beta, scored per stage against 0a, so a bad path can be traced to the stage that broke it.
 
-**0c. Real backend for the app.** FastAPI service implementing the `CapitanApi` contract
+**0c. Real backend for the app.** ✅ *Local version done 2026-10-20* (`backend/server/app.py`,
+`rc/src/api/http.ts`): detection + color routes + beta + places + corrections/grades,
+everything saved to `backend/store/`. Remaining: GPU host for DA3/DUSt3R/Marigold,
+real auth, deployment beyond the local Wi-Fi.
+Original scope: FastAPI service implementing the `CapitanApi` contract
 (`rc/src/api/types.ts`); HTTP client in `rc/src/api/` behind `API_MODE`. GPU models
 (DA3, DUSt3R, Marigold) on a serverless GPU host (Modal / RunPod) instead of Colab.
 

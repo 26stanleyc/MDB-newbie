@@ -31,3 +31,6 @@ backend/multiview/sets/*/images/
 
 # Secrets (API keys)
 .env
+
+# Backend server data (uploads + corrections)
+backend/store/

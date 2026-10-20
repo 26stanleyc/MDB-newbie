@@ -19,6 +19,15 @@ python3 -m venv .venv
 ./.venv/bin/pip install -r backend/requirements.txt
 ```
 
+**Server** — `server/app.py` serves the app's API (`rc/src/api/types.ts`) from your Mac:
+
+```bash
+PYTORCH_ENABLE_MPS_FALLBACK=1 ./.venv/bin/uvicorn --app-dir backend server.app:app --host 0.0.0.0 --port 8000
+```
+
+The app finds it automatically on the Expo dev machine's IP, port 8000 (override with
+`EXPO_PUBLIC_API_URL`). Uploads and corrections are stored in `store/`.
+
 All scripts are run **from the parent folder**, e.g.
 `./.venv/bin/python backend/scripts/evaluate_quality.py`. Usage for each is in its
 docstring. Depth Anything 3 and DUSt3R need a GPU and run on Colab

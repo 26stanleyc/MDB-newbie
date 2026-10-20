@@ -608,4 +608,17 @@ Upload `run_dust3r.py` + a zip of same-wall views, run on a GPU, get the fold an
   — effectively tied, so ours stays. Test set is only 4 images / 201 holds; enlarging it
   is Phase 1 step 1. Rebuilt the 2 `bh-phone` depth records with the corrected masks.
   (Training used `bh` only, so the trained model was unaffected.)
+- **2026-10-20 (backend connected — IMPROVEMENT_PLAN 0c, local)** — `backend/server/app.py`
+  (FastAPI) implements the app's `CapitanApi` over HTTP; `pipeline/scan.py` runs
+  detection (M9, score ≥ 0.5, up to 400 holds) → color routes (M10) per scan, and the beta
+  planner (M12) per path request with metric scale from median hold size (14 cm assumed,
+  clamped to a 2–10 m wall). Places use `PlaceRegistry` (seeded with the fixture gym names,
+  no coords). Every upload + CaptureMeta, hold correction, path correction and grade is
+  persisted under `backend/store/` (jsonl logs = training labels). App: `src/api/http.ts`,
+  `API_MODE` now defaults to `http`; auth/profile stay on the client mock. Verified: every
+  endpoint via TestClient on bh/0075 (65 holds, 6 routes; 160 cm → 8 steps, 190 cm → 6),
+  and in the app on web — bh/0917 scan → results with real outlines → path view with
+  numbered moves. ~1.2 s per scan on MPS after model load. **Not yet verified on a phone**
+  (React Native multipart upload path). Visible weakness on 0917: wall-panel edges and
+  shadows detected as holds (Phase 1 hard negatives).
 - **(earlier)** — Built and verified Phase 1 M0–M6.

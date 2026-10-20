@@ -28,6 +28,12 @@ PYTORCH_ENABLE_MPS_FALLBACK=1 ./.venv/bin/python backend/scripts/evaluate_holds.
 ./.venv/bin/python backend/scripts/plan_beta.py --stem 0075     # M12 beta planner
 ```
 
+Backend server (the app talks to this; it also needs `npx expo start` in `rc/`):
+
+```bash
+PYTORCH_ENABLE_MPS_FALLBACK=1 ./.venv/bin/uvicorn --app-dir backend server.app:app --host 0.0.0.0 --port 8000
+```
+
 There is no unit-test suite — each milestone's `scripts/evaluate_*.py` / `validate_*.py` is its verification; run the relevant one before calling backend work done. Usage for every script is in its module docstring.
 
 `backend/requirements.txt` only lists numpy + opencv; the venv actually also has torch/torchvision, scikit-learn, transformers, diffusers, trimesh, matplotlib. Add deps there when you rely on them.
@@ -37,6 +43,8 @@ Frontend (inside `rc/`): `npx expo start`, `npx tsc --noEmit`, `npx expo lint`, 
 ## Backend architecture
 
 `backend/pipeline/` = library modules; `backend/scripts/` = CLI entry points that build/evaluate/visualize; outputs go to `backend/artifacts/`.
+
+`backend/server/app.py` (FastAPI) implements the app's `CapitanApi` contract (`rc/src/api/types.ts`) over HTTP; `rc/src/api/http.ts` is the client, selected by `API_MODE` (`rc/src/config/api.ts`, default `http`; `EXPO_PUBLIC_API_MODE=mock` for the in-app mock). The server runs `pipeline/scan.py` (detect → color routes; beta per request) in a single worker thread and saves every upload plus every correction under `backend/store/` (gitignored) — that folder is the training corpus. Scans keep internal fields (`geom`, `imageSize`, `captureMeta`, `pathOverrides`) that are stripped from API responses. Auth/profile stay on the client mock.
 
 Per-scan flow: `quality.py` (M7: blur/exposure/is-a-wall) → `holds.py` (M9: torchvision Mask R-CNN, classes bg/hold/volume, checkpoint `artifacts/m9_maskrcnn.pt`) → `routes.py` (M10: CIELAB per-hold color, cluster-then-name) → depth → `beta.py` (M12). `places.py` (M8) is gym dedup/search, pure stdlib.
 

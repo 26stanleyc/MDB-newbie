@@ -13,6 +13,10 @@ diffusers
 accelerate
 # Multi-view point clouds
 trimesh
+# Server (backend/server/app.py)
+fastapi
+uvicorn
+python-multipart
 # Dataset download (data.py)
 kagglehub
 # Not installed locally — run on Colab: depth_anything_3 (backend/colab), dust3r (backend/multiview)
