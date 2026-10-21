@@ -38,7 +38,6 @@ import shutil
 import sys
 
 import cv2
-import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BACKEND = os.path.dirname(HERE)
@@ -46,18 +45,13 @@ ROOT = os.path.dirname(BACKEND)
 sys.path.insert(0, BACKEND)
 
 from pipeline.holds import load_via_index  # noqa: E402
+from pipeline.photo_hash import dhash, distance  # noqa: E402
 from pipeline.routes import APP_HOLD_COLORS, HOLD_COLORS_PATH  # noqa: E402
 from pipeline.splits import APP_GYM, all_gyms  # noqa: E402
 
 DATA = os.path.join(ROOT, "data")
 STORE = os.path.join(BACKEND, "store", "scans")
 DUPLICATE_BITS = 10  # dHash distance (of 64) under which an upload counts as a dataset photo
-
-
-def dhash(bgr: np.ndarray) -> int:
-    g = cv2.resize(cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY), (9, 8), interpolation=cv2.INTER_AREA)
-    bits = (g[:, 1:] > g[:, :-1]).flatten()
-    return int("".join("1" if b else "0" for b in bits), 2)
 
 
 def labeled_photo_hashes() -> dict[int, str]:
@@ -118,7 +112,7 @@ def main() -> int:
             skipped.append((sid, "no image"))
             continue
         h = dhash(bgr)
-        dup = next((name for k, name in known.items() if bin(k ^ h).count("1") <= DUPLICATE_BITS), None)
+        dup = next((name for k, name in known.items() if distance(k, h) <= DUPLICATE_BITS), None)
         if dup:
             skipped.append((sid, f"same photo as {dup}"))
             continue

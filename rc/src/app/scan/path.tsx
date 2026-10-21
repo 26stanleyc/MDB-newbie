@@ -137,8 +137,9 @@ export default function PathScreen() {
         placeName,
         imageUri: scan.imageUri,
         createdAt: scan.createdAt,
+        photoHash: scan.photoHash,
       },
-      { restore: true },
+      { climbed: true },
     );
     toast.done('Route finished');
     router.dismissTo('/home');

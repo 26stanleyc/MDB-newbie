@@ -8,12 +8,14 @@ import { enter, Press, RollingText } from '@/components/motion';
 import { ScanDock } from '@/components/scan-dock';
 import { Icon, Screen, Text } from '@/components/ui';
 import { APP_NAME } from '@/config/app';
+import { usePhotoHashBackfill } from '@/lib/use-photo-hash-backfill';
 import { useScans, type SavedScan } from '@/store/use-scans';
 import { Fonts, Radius, Spacing, useThemeColors } from '@/theme';
 
 export default function Home() {
   const c = useThemeColors();
   const scans = useScans((s) => s.scans);
+  usePhotoHashBackfill(); // one saved wall per photo, also for walls saved before
   const recent = scans.slice(0, 6);
   const gymCount = new Set(scans.map((s) => s.placeId)).size;
 

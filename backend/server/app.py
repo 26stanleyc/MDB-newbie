@@ -34,6 +34,7 @@ sys.path.insert(0, BACKEND)
 
 from pipeline import google_places  # noqa: E402
 from pipeline.env import load_env  # noqa: E402
+from pipeline.photo_hash import dhash_hex  # noqa: E402
 from pipeline.places import Place, PlaceRegistry, haversine_m  # noqa: E402
 from pipeline.quality import check_image_quality  # noqa: E402
 from pipeline.scan import analyze_scan, group_routes, plan_options, plan_route, process_image, suggest_route  # noqa: E402
@@ -50,6 +51,7 @@ SEED_PLACES = [
     ("place-bp", "Bridges Rock Gym"),
 ]
 PUBLIC_SCAN_FIELDS = ("id", "placeId", "createdAt", "status", "holds", "routes")
+OPTIONAL_PUBLIC_FIELDS = ("analysis", "wall", "reviewedAt", "photoHash")
 # Per-hold fields from the analysis phase, copied from geom onto each hold in responses.
 HOLD_ANALYSIS_FIELDS = ("quality", "gripPoint", "wallAngleDeg", "relWallAngleDeg")
 
@@ -105,6 +107,12 @@ def _load() -> None:
         path = os.path.join(SCANS_DIR, scan_id, "scan.json")
         if os.path.exists(path):
             scans[scan_id] = json.load(open(path))
+    for scan in scans.values():  # scans from before photo hashes existed
+        if "photoHash" not in scan:
+            bgr = cv2.imread(os.path.join(_scan_dir(scan["id"]), "view_0.jpg"))
+            if bgr is not None:
+                scan["photoHash"] = dhash_hex(bgr)
+                _save_scan(scan)
     for scan in scans.values():  # server restarted mid-processing → redo
         if scan["status"] == "processing":
             _worker.submit(_process, scan["id"])
@@ -143,12 +151,8 @@ def _public(scan: dict, request: Request) -> dict:
         {**h, **{k: geom[h["id"]][k] for k in HOLD_ANALYSIS_FIELDS if k in geom.get(h["id"], {})}}
         for h in scan["holds"]
     ]
-    if "analysis" in scan:
-        out["analysis"] = scan["analysis"]  # 'pending' | 'done' | 'failed'
-    if "wall" in scan:
-        out["wall"] = scan["wall"]
-    if "reviewedAt" in scan:
-        out["reviewedAt"] = scan["reviewedAt"]
+    # analysis: 'pending' | 'done' | 'failed'; photoHash: same photo → one saved wall in the app
+    out.update({k: scan[k] for k in OPTIONAL_PUBLIC_FIELDS if k in scan})
     return out
 
 
@@ -273,13 +277,17 @@ async def create_scan(
     placeId = _resolve_place_id(placeId)  # a gym picked from Google joins the registry here
     scan_id = f"scan-{datetime.now():%Y%m%d-%H%M%S}-{uuid.uuid4().hex[:6]}"
     os.makedirs(_scan_dir(scan_id))
+    photo_hash = None
     for i, img in enumerate(images):
+        data = await img.read()
         with open(os.path.join(_scan_dir(scan_id), f"view_{i}.jpg"), "wb") as f:
-            f.write(await img.read())
+            f.write(data)
+        if i == 0:
+            photo_hash = dhash_hex(_decode(data))
     scan = {
         "id": scan_id, "placeId": placeId, "createdAt": _now(), "status": "processing",
         "holds": [], "routes": [], "mode": mode, "views": len(images),
-        "captureMeta": json.loads(metas), "pathOverrides": {},
+        "captureMeta": json.loads(metas), "pathOverrides": {}, "photoHash": photo_hash,
     }
     if featured:  # starter walls every app shows in Saved walls (scripts/seed_featured.py)
         scan.update(featured=True, source=source)
@@ -295,7 +303,8 @@ def featured_scans(request: Request) -> list[dict]:
     """Starter walls for the Saved walls tab, shaped like the app's saved-scan record."""
     names = {p.id: p.name for p in registry.places}
     out = [{"scanId": s["id"], "placeId": s["placeId"], "placeName": names.get(s["placeId"], "Gym"),
-            "imageUri": str(request.url_for("scan_image", scan_id=s["id"])), "createdAt": s["createdAt"]}
+            "imageUri": str(request.url_for("scan_image", scan_id=s["id"])), "createdAt": s["createdAt"],
+            "photoHash": s.get("photoHash")}
            for s in scans.values() if s.get("featured") and s["status"] == "done"]
     return sorted(out, key=lambda x: x["createdAt"], reverse=True)
 

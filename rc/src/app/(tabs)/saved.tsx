@@ -7,6 +7,7 @@ import Animated from 'react-native-reanimated';
 import { api } from '@/api';
 import { Contours } from '@/components/contours';
 import { enter, Press } from '@/components/motion';
+import { usePhotoHashBackfill } from '@/lib/use-photo-hash-backfill';
 import { Icon, Screen, Text } from '@/components/ui';
 import { useScans, type SavedScan } from '@/store/use-scans';
 import { Fonts, Radius, Spacing, useThemeColors } from '@/theme';
@@ -20,6 +21,7 @@ export default function Saved() {
   const scans = useScans((s) => s.scans);
   const places = useScans((s) => s.places);
   const addScan = useScans((s) => s.addScan);
+  usePhotoHashBackfill(); // one saved wall per photo, also for walls saved before
 
   // Starter walls from the backend join the saved list (addScan skips duplicates).
   useEffect(() => {

@@ -59,6 +59,7 @@ export type Scan = {
   routes: Route[];
   analysis?: 'pending' | 'done' | 'failed'; // hold quality + wall angle phase
   reviewedAt?: string; // the climber confirmed the holds look right (training-grade labels)
+  photoHash?: string; // 64-bit photo fingerprint (hex): the same photo uploaded twice matches
   wall?: {
     angleDeg: number | null; // main wall vs vertical (needs CaptureMeta.gravity)
     source: 'gravity' | 'no_gravity';
@@ -121,6 +122,7 @@ export type FeaturedScan = {
   placeName: string;
   imageUri: string;
   createdAt: string;
+  photoHash?: string;
 };
 
 /** Mocked auth (§5, §8). Minimal shape; fleshed out in Phase 2. */

@@ -12,16 +12,39 @@ export type SavedScan = {
   placeName: string;
   imageUri: string;
   createdAt: string;
+  photoHash?: string; // same photo (re-uploaded) → one saved wall
 };
+
+const SAME_PHOTO_BITS = 6; // matches backend/pipeline/photo_hash.py
+
+/** Whether two photo fingerprints (16 hex chars) are the same photo. */
+function samePhoto(a?: string, b?: string): boolean {
+  if (!a || !b || a.length !== 16 || b.length !== 16) return false;
+  let bits = 0;
+  for (let i = 0; i < 16; i += 8) {
+    let x = (parseInt(a.slice(i, i + 8), 16) ^ parseInt(b.slice(i, i + 8), 16)) >>> 0;
+    while (x) {
+      bits += x & 1;
+      x >>>= 1;
+    }
+  }
+  return bits <= SAME_PHOTO_BITS;
+}
 
 type ScansState = {
   scans: SavedScan[];
   places: Record<string, Pick<Place, 'id' | 'name'>>;
   /** Scans the climber deleted; kept so starter walls don't come back on the next fetch. */
   removed: string[];
-  /** restore: also bring back a wall the climber deleted (they just climbed it again). */
-  addScan: (scan: SavedScan, opts?: { restore?: boolean }) => void;
+  /**
+   * climbed: the climber just finished a route on it — it replaces an earlier save of
+   * the same photo and comes back even if they had deleted it. Without it (starter
+   * walls) a wall whose photo is already saved, or was deleted, is skipped.
+   */
+  addScan: (scan: SavedScan, opts?: { climbed?: boolean }) => void;
   removeScan: (scanId: string) => void;
+  /** Fill in fingerprints for walls saved before they existed, then keep one per photo. */
+  setPhotoHashes: (hashes: Record<string, string>) => void;
   placesWithScans: () => { id: string; name: string; count: number }[];
   scansForPlace: (placeId: string) => SavedScan[];
 };
@@ -35,10 +58,11 @@ export const useScans = create<ScansState>()(
       removed: [],
       addScan: (scan, opts) =>
         set((s) => {
-          if (s.scans.some((e) => e.scanId === scan.scanId)) return s; // dedupe
-          if (s.removed.includes(scan.scanId) && !opts?.restore) return s; // deleted by the climber
+          const same = (e: SavedScan) =>
+            e.scanId === scan.scanId || samePhoto(e.photoHash, scan.photoHash);
+          if (!opts?.climbed && (s.scans.some(same) || s.removed.includes(scan.scanId))) return s;
           return {
-            scans: [scan, ...s.scans],
+            scans: [scan, ...s.scans.filter((e) => !same(e))], // one entry per photo, newest
             removed: s.removed.filter((id) => id !== scan.scanId),
             places: {
               ...s.places,
@@ -52,6 +76,17 @@ export const useScans = create<ScansState>()(
           scans: s.scans.filter((e) => e.scanId !== scanId),
           removed: [...s.removed, scanId],
         })),
+      setPhotoHashes: (hashes) =>
+        set((s) => {
+          const newestFirst = s.scans
+            .map((e) => (hashes[e.scanId] ? { ...e, photoHash: hashes[e.scanId] } : e))
+            .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+          const kept: SavedScan[] = [];
+          for (const e of newestFirst) {
+            if (!kept.some((k) => samePhoto(k.photoHash, e.photoHash))) kept.push(e);
+          }
+          return { scans: kept };
+        }),
       placesWithScans: () => {
         const { scans, places } = get();
         const counts = new Map<string, number>();
