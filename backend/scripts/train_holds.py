@@ -8,6 +8,10 @@ Few labeled images, many instances each; training takes random crops at the app'
 working scale (see HoldDataset). Uses every gym in data/ via pipeline/splits.py, so
 new labeled images are picked up automatically; --split train leaves the test images
 out so evaluate_pipeline.py stays honest.
+
+Scans climbers confirmed in the app ("Holds look right" — the "app" gym, written by
+scripts/export_feedback.py) are included like any other gym; --no-app-feedback leaves
+them out (e.g. to compare against a model trained on hand labels only).
 """
 
 from __future__ import annotations
@@ -26,7 +30,7 @@ ROOT = os.path.dirname(BACKEND)
 sys.path.insert(0, BACKEND)
 
 from pipeline.holds import HoldDataset, build_model, collate_fn, load_via_index  # noqa: E402
-from pipeline.splits import all_gyms, split_of  # noqa: E402
+from pipeline.splits import APP_GYM, all_gyms, split_of  # noqa: E402
 
 DATA = os.path.join(ROOT, "data")
 ARTIFACTS = os.path.join(BACKEND, "artifacts")
@@ -49,6 +53,8 @@ def main() -> int:
     ap.add_argument("--repeats", type=int, default=6, help="random crops per image per epoch")
     ap.add_argument("--split", default="train", choices=["train", "all"],
                     help="train = held-out test images excluded (for evaluation); all = final model")
+    ap.add_argument("--no-app-feedback", action="store_true",
+                    help="leave out scans confirmed in the app (data/app-annotation.csv)")
     ap.add_argument("--device", default="auto")
     ap.add_argument("--limit", type=int, default=0, help="limit train images (smoke test)")
     ap.add_argument("--out", default=os.path.join(ARTIFACTS, "m9_maskrcnn.pt"))
@@ -57,7 +63,8 @@ def main() -> int:
     device = pick_device(args.device)
     print(f"device: {device}")
 
-    samples = sorted(load_via_index(DATA, all_gyms(DATA)), key=lambda s: s.path)
+    gyms = [g for g in all_gyms(DATA) if not args.no_app_feedback or g != APP_GYM]
+    samples = sorted(load_via_index(DATA, gyms), key=lambda s: s.path)
     train = [s for s in samples if args.split == "all" or split_of(s.gym, s.path) == "train"]
     if args.limit:
         train = train[: args.limit]

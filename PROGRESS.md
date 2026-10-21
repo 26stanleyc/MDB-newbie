@@ -378,6 +378,11 @@ differentiating depth).
 - **Compute:** M9 trained locally on MPS (own model) to avoid Detectron2/GPU pain;
   M10 is mostly classical (color clustering); **M11 (DA3 depth) still wants a GPU**
   and DA3 is used, not trained.
+- **App feedback is train-only; detection uses reviewed scans only** (2026-10-21) — a
+  scan's untouched detections can be people (confidence 0.58–1.0, no clean cutoff), so
+  only scans the climber confirmed with "Holds look right" go into the detection CSV,
+  and `train_holds.py` includes those by default (`--no-app-feedback` to leave out).
+  Color labels come only from holds the climber recolored or added, reviewed or not.
 
 ### M12 prototype — personalized beta / path planner (2026-10-13)
 The product's core feature: holds → the hand/foot sequence up a route, personalized to
@@ -777,4 +782,35 @@ Upload `run_dust3r.py` + a zip of same-wall views, run on a GPU, get the fold an
   scans were added (it subscribed to a helper function, not the scan list), and scans at
   a gym picked from Google were saved under the temporary `g:` id instead of the
   server's registry id (duplicate gym rows). Verified in the web app.
+- **2026-10-21 (app feedback → training data)** — `scripts/export_feedback.py` turns
+  scans a climber reviewed in the app (they have `hold_corrections.jsonl`) into a new
+  `app` gym: `data/app/<scan>.jpg` + `data/app-annotation.csv` (VIA polygons of the holds
+  after corrections; `label_type` app_corrected / app_accepted; tap-to-pick routes as
+  `route_id`) and `data/app-hold-colors.json` (hold_colors.json format; only recolored or
+  added holds get a color). `app` is always train in `pipeline/splits.py`, never scored
+  by `evaluate_pipeline.py`. Skips starter walls and any upload whose dHash matches a
+  labeled dataset photo (the store's only corrected scan was an upload of `bh/0917`, so
+  it's skipped and the current export is empty). `build_color_refs.py` and
+  `evaluate_pipeline.py`'s train refs add the app colors; `train_holds.py` adds the app
+  scans only with `--app-feedback` (see decisions). Verified on a scratch copy of a phone
+  scan with a delete, two recolors, an added box and a tap-to-pick route: polygons line
+  up on the photo, `train_holds.py --app-feedback` went 11 → 12 images (+177 instances,
+  unchanged without the flag), color refs 1689 → 1692. Path corrections, grades and
+  custom routes beyond `route_id` aren't used yet; path picks already feed
+  `judge_paths.py fit --source both`.
+- **2026-10-21 (people filter + "Holds look right" review)** — `pipeline/people.py`:
+  torchvision's COCO Mask R-CNN (the cached weights the hold model started from) finds
+  people (score ≥ 0.7); `process_image` drops any hold whose mask is ≥ 50% inside a
+  person. On the Mosaic phone scan it removed 20 of 177 "holds" — every one a person or
+  the climber's leg; the hold under the climber's foot stayed. Drops nothing on the
+  held-out test photos (no people in them), so test metrics are unchanged; ~0.3–1.2 s
+  per photo on MPS. Server `POST /scans/{id}/review` sets `reviewedAt` and logs
+  `reviews.jsonl`; the app's "Holds look right" button (step 1 of a fresh scan) saves
+  turned-off holds and then calls it. `export_feedback.py` now puts only reviewed scans
+  in `data/app-annotation.csv` (label_type app_reviewed / app_corrected), keeps
+  unreviewed corrections as color labels, skips repeat uploads of one photo (keeping the
+  reviewed copy), and `train_holds.py` includes the app gym by default. Verified: upload
+  through the server → 157 holds (was 177), review from the web app logged; scratch
+  store → 2 reviewed scans in training (11 → 13 images; `--no-app-feedback` 11), an
+  unreviewed recolor as a color label only.
 - **(earlier)** — Built and verified Phase 1 M0–M6.

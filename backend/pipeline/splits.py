@@ -5,6 +5,9 @@
   TEST_PERCENT go to test. The hash never changes, so adding images never moves an
   existing image between splits, and new gyms/images are assigned automatically.
 
+- APP_GYM ("app", written by scripts/export_feedback.py from climbers' corrections in
+  the app) is always train: its labels are partly the model's own detections.
+
 To add data: drop images in data/<gym>/ with data/<gym>-annotation.csv (VIA export).
 """
 
@@ -16,6 +19,7 @@ import os
 
 TEST_GYMS = {"sm", "bh-phone"}
 TEST_PERCENT = 25
+APP_GYM = "app"
 
 
 def all_gyms(data_dir: str) -> list[str]:
@@ -27,6 +31,8 @@ def all_gyms(data_dir: str) -> list[str]:
 
 
 def split_of(gym: str, filename: str) -> str:
+    if gym == APP_GYM:
+        return "train"
     if gym in TEST_GYMS:
         return "test"
     stem = os.path.splitext(os.path.basename(filename))[0]

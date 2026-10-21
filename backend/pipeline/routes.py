@@ -140,6 +140,7 @@ _BACKEND = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 COLOR_REFS_PATH = os.path.join(_BACKEND, "artifacts", "color_refs.npz")
 COLOR_LABELS_PATH = os.path.join(_BACKEND, "eval", "route_colors.json")
 HOLD_COLORS_PATH = os.path.join(_BACKEND, "eval", "hold_colors.json")  # per-hold labels, gyms without routes
+APP_HOLD_COLORS = "app-hold-colors.json"  # in data/: colors climbers set in the app (scripts/export_feedback.py)
 KNN_K = 7
 L_WEIGHT = 0.5
 

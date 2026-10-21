@@ -45,11 +45,11 @@ sys.path.insert(0, BACKEND)
 
 from pipeline.beta import Hold as BetaHold, plan_beta  # noqa: E402
 from pipeline.holds import build_model, load_via_index  # noqa: E402
-from pipeline.routes import ColorNamer, hold_label_features  # noqa: E402
+from pipeline.routes import APP_HOLD_COLORS, ColorNamer, hold_label_features  # noqa: E402
 from pipeline.scan import (  # noqa: E402
     MAX_DETECTIONS, SCORE_MIN, build_scan, detection_from_mask, meters_per_pixel, suggest_route, working_image,
 )
-from pipeline.splits import all_gyms, split_of  # noqa: E402
+from pipeline.splits import APP_GYM, all_gyms, split_of  # noqa: E402
 
 DATA = os.path.join(ROOT, "data")
 EVAL = os.path.join(BACKEND, "eval")
@@ -220,13 +220,17 @@ def main() -> int:
     model.to(device).eval()
 
     everything = load_via_index(DATA, all_gyms(DATA))
-    samples = [s for s in everything if args.split == "all" or split_of(s.gym, s.path) == args.split]
+    # Never score on app feedback: its labels are partly the model's own detections.
+    samples = [s for s in everything if s.gym != APP_GYM
+               and (args.split == "all" or split_of(s.gym, s.path) == args.split)]
     # Color references from TRAINING images only, so test colors are never seen.
     in_train = lambda key: split_of(*key.split("/", 1)) == "train"  # noqa: E731
     namer = False if args.palette_colors else ColorNamer.from_samples(
         [s for s in everything if split_of(s.gym, s.path) == "train"], working_image)
     if namer and not args.no_hold_labels:
-        namer = namer.merged(ColorNamer.from_hold_labels(DATA, working_image, keep=in_train))
+        namer = namer.merged(ColorNamer.from_hold_labels(DATA, working_image, keep=in_train)).merged(
+            ColorNamer.from_hold_labels(DATA, working_image, keep=in_train,
+                                        path=os.path.join(DATA, APP_HOLD_COLORS)))  # app feedback, train-only
     print(f"{len(samples)} images in split '{args.split}': "
           + ", ".join(f"{g}={n}" for g, n in Counter(s.gym for s in samples).items()))
 

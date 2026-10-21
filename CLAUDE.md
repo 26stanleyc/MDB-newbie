@@ -28,6 +28,7 @@ PYTORCH_ENABLE_MPS_FALLBACK=1 ./.venv/bin/python backend/scripts/evaluate_holds.
 ./.venv/bin/python backend/scripts/evaluate_pipeline.py          # all stages, held-out split → backend/eval/metrics_test.json
 ./.venv/bin/python backend/scripts/build_color_refs.py           # rebuild hold-color k-NN refs after labeling routes
 ./.venv/bin/python backend/scripts/seed_featured.py           # starter walls for Saved walls (server must be running)
+./.venv/bin/python backend/scripts/export_feedback.py          # app corrections → data/app/ + data/app-annotation.csv + data/app-hold-colors.json (--dry-run to preview)
 ./.venv/bin/python backend/scripts/judge_paths.py fit --source both   # planner weights from Claude judgments + app path picks (--save to apply)
 PYTORCH_ENABLE_MPS_FALLBACK=1 ./.venv/bin/python backend/scripts/train_holds.py --split train --out backend/artifacts/m9_train_split.pt   # model for evaluation
 PYTORCH_ENABLE_MPS_FALLBACK=1 ./.venv/bin/python backend/scripts/train_holds.py --split all    # the app's model (~70 min MPS)
@@ -54,7 +55,7 @@ Frontend (inside `rc/`): `npx expo start`, `npx tsc --noEmit`, `npx expo lint`, 
 
 `backend/server/app.py` (FastAPI) implements the app's `CapitanApi` contract (`rc/src/api/types.ts`) over HTTP; `rc/src/api/http.ts` is the client, selected by `API_MODE` (`rc/src/config/api.ts`, default `http`; `EXPO_PUBLIC_API_MODE=mock` for the in-app mock). The server runs `pipeline/scan.py` (detect → color routes; then an analysis phase, `pipeline/analysis.py`: hold quality, grip point, wall angles; beta per request) in a single worker thread and saves every upload plus every correction under `backend/store/` (gitignored) — that folder is the training corpus. Scans keep internal fields (`geom`, `imageSize`, `captureMeta`, `pathOverrides`) that are stripped from API responses. Auth/profile stay on the client mock. Secrets (`ANTHROPIC_API_KEY`, `GOOGLE_MAPS_API_KEY`) live in the gitignored root `.env`, loaded by `pipeline/env.py`; the Google key is server-side only (`pipeline/google_places.py`, gym finder).
 
-Per-scan flow: `quality.py` (M7: blur/exposure/is-a-wall) → `holds.py` (M9: torchvision Mask R-CNN, classes bg/hold/volume, checkpoint `artifacts/m9_maskrcnn.pt`) → `routes.py` (M10: CIELAB per-hold color, cluster-then-name) → depth → `beta.py` (M12). `places.py` (M8) is gym dedup/search, pure stdlib.
+Per-scan flow: `quality.py` (M7: blur/exposure/is-a-wall) → `holds.py` (M9: torchvision Mask R-CNN, classes bg/hold/volume, checkpoint `artifacts/m9_maskrcnn.pt`) → `people.py` (drops holds that are mostly a person, COCO Mask R-CNN) → `routes.py` (M10: CIELAB per-hold color, cluster-then-name) → depth → `beta.py` (M12). `places.py` (M8) is gym dedup/search, pure stdlib.
 
 Depth/geometry has several parallel pipelines, kept side by side for comparison:
 - `depth.py` + `depth_schema.py` + `depth_model.py` — M11 full-image DA3 metric depth → per-hold records. DA3 runs on **Colab GPU** only (`backend/colab/`); depth maps are cached in `artifacts/da3_depth/*.npz`.
@@ -71,6 +72,7 @@ Key known limits (details in PROGRESS.md): dataset images have no EXIF/gravity, 
 - `data/{bh,bh-phone,sm}/` — gym photos with VIA polygon annotations (`data/*-annotation.{csv,json}`, holds + volumes, some `route_id`s). Only **19 images are densely labeled** (bh 15, sm 2, bh-phone 2). Splits: see `pipeline/splits.py` (test = `sm`, `bh-phone`, and ~25% of other gyms' images by hash). `bh` (1,061 images) is a gym walk-around, so many walls have multiple views.
 - `data/model/` — pre-trained Detectron2 hold model + triplet network (unused; M9 replaced Detectron2).
 - `data.py` downloads the same dataset from Kaggle via `kagglehub`.
+- **App feedback:** the server logs every correction under `backend/store/scans/<id>/*.jsonl`; "Holds look right" in the app sets `reviewedAt` (`POST /scans/{id}/review`). `scripts/export_feedback.py` turns reviewed scans into the train-only `app` gym (never in the test split, never scored), which `train_holds.py` includes by default (`--no-app-feedback` to leave out). Unreviewed scans contribute only the colors the climber set. Exporting never retrains.
 - **Adding data:** put images in `data/<gym>/` with a VIA export `data/<gym>-annotation.csv` (polygon regions; `hold_type` hold/volume; optional `route_id`). Training, color references and evaluation pick up every `*-annotation.csv` automatically. For color ground truth, add the route colors to `backend/eval/route_colors.json` (key `"<gym>/<file>"`).
 
 ## Legacy / scratch at the root

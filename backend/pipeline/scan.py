@@ -16,6 +16,7 @@ import torch
 
 from .beta import FEATURES, Hold as BetaHold, Reach, load_weights, path_features, plan_beta
 from .holds import EVAL_MAX_SIDE, build_model
+from .people import drop_people, person_mask
 from .routes import ColorNamer, classify_and_group, hold_color_lab, hold_lab, linear_exposure
 
 BACKEND = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -178,9 +179,9 @@ def analyze_scan(bgr: np.ndarray, scan: dict, gravity: dict | None = None) -> di
 
 
 def process_image(bgr: np.ndarray, id_prefix: str) -> dict:
-    """Full scan processing: detect → color routes."""
+    """Full scan processing: detect → drop holds that are people → color routes."""
     img = working_image(bgr)
-    return build_scan(img, detect_holds(img), id_prefix)
+    return build_scan(img, drop_people(detect_holds(img), person_mask(img)), id_prefix)
 
 
 def group_routes(holds: list[dict], id_prefix: str, previous: list[dict] | None = None,

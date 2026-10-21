@@ -147,6 +147,8 @@ def _public(scan: dict, request: Request) -> dict:
         out["analysis"] = scan["analysis"]  # 'pending' | 'done' | 'failed'
     if "wall" in scan:
         out["wall"] = scan["wall"]
+    if "reviewedAt" in scan:
+        out["reviewedAt"] = scan["reviewedAt"]
     return out
 
 
@@ -424,6 +426,20 @@ def corrections(scan_id: str, body: CorrectionsBody, request: Request) -> dict:
             group_routes(scan["holds"], scan_id, auto, scan["geom"], scan["imageSize"])
         _save_scan(scan)
         _log(scan_id, "hold_corrections", {"corrections": body.corrections})
+    return _public(scan, request)
+
+
+@app.post("/scans/{scan_id}/review")
+def review(scan_id: str, request: Request) -> dict:
+    """The climber confirms the holds look right: every remaining hold is now trusted as a
+    label (scripts/export_feedback.py exports reviewed scans for detection training)."""
+    scan = _get_scan(scan_id)
+    if scan["status"] != "done":
+        raise HTTPException(409, "Scan is not done processing")
+    with _lock:
+        scan["reviewedAt"] = _now()
+        _save_scan(scan)
+        _log(scan_id, "reviews", {"holds": len(scan["holds"])})
     return _public(scan, request)
 
 
