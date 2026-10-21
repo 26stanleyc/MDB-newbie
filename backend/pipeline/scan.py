@@ -300,6 +300,13 @@ def _route_holds(route: dict, geom: dict, image_size: list[int]) -> list:
                      geom[hid].get("quality", 0.6)) for hid in route["holdIds"]]
 
 
+def _start_id(route: dict) -> str | None:
+    """The hold both hands start on: the one the climber tapped (tap-to-pick routes);
+    detected routes leave it to the planner."""
+    s = route.get("startHoldId")
+    return s if s in route["holdIds"] else None
+
+
 def plan_options(route: dict, geom: dict, image_size: list[int], height_cm: float, wingspan_cm: float,
                  k: int = MAX_PATH_OPTIONS) -> list[dict]:
     """Up to k genuinely different betas, "Suggested" (the default planner) first. Each: id, label, steps,
@@ -312,7 +319,7 @@ def plan_options(route: dict, geom: dict, image_size: list[int], height_cm: floa
     out, seen = [], set()
     for sid, label, mult, add in PATH_STYLES:
         w = PLANNER_WEIGHTS * np.array(mult, float) + np.array(add, float)
-        steps, _ = plan_beta(holds, height_cm, wingspan_cm, weights=w)
+        steps, _ = plan_beta(holds, height_cm, wingspan_cm, start_id=_start_id(route), weights=w)
         hands = tuple(s.hold_id for s in steps if s.limb in ("LH", "RH"))
         if hands in seen:
             continue
@@ -340,5 +347,5 @@ def plan_route(route: dict, geom: dict, image_size: list[int], height_cm: float,
         return []
     if len(holds) == 1:
         return [{"order": 1, "holdId": holds[0].id, "limb": "RH"}, {"order": 2, "holdId": holds[0].id, "limb": "LH"}]
-    steps, _ = plan_beta(holds, height_cm, wingspan_cm, weights=PLANNER_WEIGHTS)
+    steps, _ = plan_beta(holds, height_cm, wingspan_cm, start_id=_start_id(route), weights=PLANNER_WEIGHTS)
     return [{"order": s.order, "holdId": s.hold_id, "limb": s.limb} for s in steps]

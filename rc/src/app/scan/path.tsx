@@ -154,6 +154,7 @@ export default function PathScreen() {
         holds={scan.holds}
         selectedHoldIds={selectedHoldIds}
         steps={visibleSteps}
+        activeOrder={mode === 'all' ? undefined : steps[current]?.order}
         style={styles.wall}
       />
 
