@@ -17,6 +17,12 @@ export type Hold = {
   polygon: Point[]; // outline for overlay
   color: string; // route color label, e.g. "blue"
   confidence: number; // 0–1
+  // Filled in by the backend's analysis phase a few seconds after the scan is done
+  // (Scan.analysis === 'done'); absent before that.
+  quality?: number; // 0–1 heuristic: size + how far it stands out from the wall
+  gripPoint?: Point | null; // where to grab it
+  wallAngleDeg?: number | null; // local wall angle: 0 vertical, + overhang, − slab; null without gravity
+  relWallAngleDeg?: number; // vs the scan's main wall, + = steeper
 };
 
 export type PathStep = { order: number; holdId: string; limb: Limb };
@@ -44,6 +50,12 @@ export type Scan = {
   status: 'processing' | 'done' | 'failed';
   holds: Hold[];
   routes: Route[];
+  analysis?: 'pending' | 'done' | 'failed'; // hold quality + wall angle phase
+  wall?: {
+    angleDeg: number | null; // main wall vs vertical (needs CaptureMeta.gravity)
+    source: 'gravity' | 'no_gravity';
+    relRangeDeg: [number, number] | null; // spread of local angles vs the main wall
+  };
 };
 
 export type HoldCorrection =
