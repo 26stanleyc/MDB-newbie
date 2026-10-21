@@ -45,7 +45,7 @@ const styles = StyleSheet.create({
     minHeight: 44,
     marginBottom: Spacing.sm,
   },
-  side: { width: 64, justifyContent: 'center' },
+  side: { minWidth: 64, justifyContent: 'center' }, // grows for a wider action (e.g. a pill)
   right: { alignItems: 'flex-end' },
   back: { width: 44, height: 44, justifyContent: 'center' },
   title: { flex: 1, textAlign: 'center' },

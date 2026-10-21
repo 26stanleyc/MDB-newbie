@@ -125,6 +125,12 @@ export default function PathScreen() {
     toast.done(`Graded ${g}`);
   };
 
+  // Done with this route: back to the scan, ready to pick the next one.
+  const finishRoute = () => {
+    toast.done('Route finished');
+    router.dismissTo({ pathname: '/scan/results', params: { scanId, placeName, finished: routeId } });
+  };
+
   return (
     <Screen padded={false}>
       <View style={styles.headerWrap}>
@@ -132,17 +138,13 @@ export default function PathScreen() {
           title={route.displayName}
           right={
             <Press
-              onPress={() =>
-                router.push({
-                  pathname: '/scan/edit-path',
-                  params: { scanId, routeId, placeName },
-                })
-              }
-              accessibilityLabel="Edit path"
+              onPress={finishRoute}
+              accessibilityLabel="Finish route"
               hitSlop={8}
+              style={[styles.finishPill, { backgroundColor: c.accent }]}
             >
-              <Text variant="label" tone="accent">
-                Edit
+              <Text variant="label" color={c.onAccent}>
+                Finish route
               </Text>
             </Press>
           }
@@ -165,6 +167,17 @@ export default function PathScreen() {
             {route.displayName}
           </Text>
           {grade ? <Badge label={`${grade.grade} · ${grade.votes}`} /> : null}
+          <Press
+            onPress={() =>
+              router.push({ pathname: '/scan/edit-path', params: { scanId, routeId, placeName } })
+            }
+            accessibilityLabel="Edit path"
+            hitSlop={8}
+          >
+            <Text variant="label" tone="accent">
+              Edit
+            </Text>
+          </Press>
           <Press
             onPress={() => setGradeOpen(true)}
             accessibilityLabel="Grade this route"
@@ -229,6 +242,7 @@ export default function PathScreen() {
             total={steps.length}
             onPrev={() => setCurrent((i) => Math.max(0, i - 1))}
             onNext={() => setCurrent((i) => Math.min(steps.length - 1, i + 1))}
+            onFinish={finishRoute}
             step={steps[current]}
           />
         ) : (
@@ -253,12 +267,14 @@ function StepControls({
   total,
   onPrev,
   onNext,
+  onFinish,
   step,
 }: {
   index: number;
   total: number;
   onPrev: () => void;
   onNext: () => void;
+  onFinish: () => void;
   step?: { limb: string; order: number };
 }) {
   const c = useThemeColors();
@@ -281,7 +297,11 @@ function StepControls({
           </Text>
         ) : null}
       </View>
-      <Button title="Next" fullWidth={false} onPress={onNext} style={styles.stepBtn} />
+      {index === total - 1 ? (
+        <Button title="Finish" fullWidth={false} onPress={onFinish} style={styles.stepBtn} />
+      ) : (
+        <Button title="Next" fullWidth={false} onPress={onNext} style={styles.stepBtn} />
+      )}
     </View>
   );
 }
@@ -289,6 +309,11 @@ function StepControls({
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   headerWrap: { paddingHorizontal: Spacing.lg, paddingTop: Spacing.sm },
+  finishPill: {
+    borderRadius: Radius.pill,
+    paddingVertical: Spacing.xs,
+    paddingHorizontal: Spacing.md,
+  },
   wall: { flex: 1 },
   sheet: {
     borderTopWidth: StyleSheet.hairlineWidth,

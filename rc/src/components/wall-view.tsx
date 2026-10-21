@@ -60,6 +60,7 @@ function area(poly: Point[]): number {
 const TAP_SLOP_PX = 14; // a tap this close to a small hold still counts
 const MAX_ZOOM = 6;
 const DOUBLE_TAP_ZOOM = 2.5;
+const TAP_MAX_MOVE_PX = 10; // a finger that travels farther is dragging, not tapping
 
 function toPoints(poly: Point[], w: number, h: number): string {
   return poly.map((p) => `${p.x * w},${p.y * h}`).join(' ');
@@ -98,7 +99,13 @@ export function WallView({
   const scale = useSharedValue(1);
   const tx = useSharedValue(0);
   const ty = useSharedValue(0);
-  const start = useSharedValue({ s: 1, x: 0, y: 0, fx: 0, fy: 0 });
+  // Each gesture keeps its own starting point: sharing one let a pan that began
+  // mid-pinch overwrite the pinch's focal point (the photo jumped sideways).
+  const pinchBase = useSharedValue({ s: 1, k: 1, x: 0, y: 0, fx: 0, fy: 0, n: 0 });
+  const panBase = useSharedValue({ x: 0, y: 0 });
+  const pinching = useSharedValue(false);
+  const panRebase = useSharedValue(false);
+  const tapDown = useSharedValue({ x: 0, y: 0 });
   // Settled zoom, so outlines and markers keep their on-screen size (they'd grow
   // with the transform otherwise). Updated when a gesture ends.
   const [zoom, setZoom] = useState(1);
@@ -111,44 +118,68 @@ export function WallView({
     return Math.min(max, Math.max(-max, t));
   };
 
+  // Pinch zooms about the fingers. Whenever the finger count changes (a finger
+  // lifts or lands) the focal point jumps, so the pinch re-bases on the photo as it
+  // is now instead of jumping with it.
+  const rebasePinch = (e: { scale: number; focalX: number; focalY: number; numberOfPointers: number }) => {
+    'worklet';
+    pinchBase.value = {
+      s: scale.value,
+      k: e.scale,
+      x: tx.value,
+      y: ty.value,
+      fx: e.focalX - bw / 2,
+      fy: e.focalY - bh / 2,
+      n: e.numberOfPointers,
+    };
+  };
+
   const pinch = Gesture.Pinch()
     .onStart((e) => {
       'worklet';
-      start.value = {
-        s: scale.value,
-        x: tx.value,
-        y: ty.value,
-        fx: e.focalX - bw / 2,
-        fy: e.focalY - bh / 2,
-      };
+      pinching.value = true;
+      rebasePinch(e);
     })
     .onUpdate((e) => {
       'worklet';
-      const s0 = start.value;
-      const s = Math.min(MAX_ZOOM, Math.max(1, s0.s * e.scale));
-      // keep the photo point first under the fingers under them as they pinch and move
+      if (e.numberOfPointers < 2) return; // one finger left: hold still until it lifts
+      if (e.numberOfPointers !== pinchBase.value.n) rebasePinch(e);
+      const b = pinchBase.value;
+      const s = Math.min(MAX_ZOOM, Math.max(1, (b.s * e.scale) / b.k));
+      // keep the photo point that was under the fingers under them as they pinch and move
       const fx = e.focalX - bw / 2;
       const fy = e.focalY - bh / 2;
       scale.value = s;
-      tx.value = clampT(fx - (s0.fx - s0.x) * (s / s0.s), s, dispW, bw);
-      ty.value = clampT(fy - (s0.fy - s0.y) * (s / s0.s), s, dispH, bh);
+      tx.value = clampT(fx - (b.fx - b.x) * (s / b.s), s, dispW, bw);
+      ty.value = clampT(fy - (b.fy - b.y) * (s / b.s), s, dispH, bh);
     })
-    .onEnd(() => {
+    .onFinalize(() => {
       'worklet';
+      pinching.value = false;
+      panRebase.value = true; // a finger still down keeps panning from here, no jump
       runOnJS(setZoom)(scale.value);
     });
 
+  // One-finger drag. iOS keeps a pan running when a second finger lands, so it
+  // stands still while a pinch is on (otherwise both move the photo and fight).
   const pan = Gesture.Pan()
     .maxPointers(1) // two fingers belong to the pinch
     .minDistance(8) // shorter moves are taps
-    .onStart(() => {
+    .onStart((e) => {
       'worklet';
-      start.value = { s: scale.value, x: tx.value, y: ty.value, fx: 0, fy: 0 };
+      // from the photo where it is, minus the slop already moved: no start jump
+      panBase.value = { x: tx.value - e.translationX, y: ty.value - e.translationY };
+      panRebase.value = false;
     })
     .onUpdate((e) => {
       'worklet';
-      tx.value = clampT(start.value.x + e.translationX, scale.value, dispW, bw);
-      ty.value = clampT(start.value.y + e.translationY, scale.value, dispH, bh);
+      if (pinching.value) return;
+      if (panRebase.value) {
+        panBase.value = { x: tx.value - e.translationX, y: ty.value - e.translationY };
+        panRebase.value = false;
+      }
+      tx.value = clampT(panBase.value.x + e.translationX, scale.value, dispW, bw);
+      ty.value = clampT(panBase.value.y + e.translationY, scale.value, dispH, bh);
     });
 
   // Double-tap: zoom into the tapped spot, or back out to the whole photo.
@@ -191,11 +222,21 @@ export function WallView({
     if (best) onHoldPress(best.id);
   };
 
+  // A drag is never a tap. Tap's own default has no distance limit (a quick drag
+  // still "taps"), and its maxDistance / requireExternalGestureToFail options
+  // stop taps from firing at all on web — so measure the finger's travel here.
   const singleTap = Gesture.Tap()
     .enabled(!!onHoldPress)
+    .onBegin((e) => {
+      'worklet';
+      tapDown.value = { x: e.x, y: e.y };
+    })
     .onEnd((e, success) => {
       'worklet';
-      if (success) runOnJS(hitTest)(e.x, e.y, scale.value, tx.value, ty.value);
+      const moved = Math.hypot(e.x - tapDown.value.x, e.y - tapDown.value.y);
+      if (success && moved < TAP_MAX_MOVE_PX) {
+        runOnJS(hitTest)(e.x, e.y, scale.value, tx.value, ty.value);
+      }
     });
 
   // Pan runs alongside the taps (a moved finger fails the tap anyway), so dragging
