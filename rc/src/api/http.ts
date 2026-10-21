@@ -9,6 +9,7 @@ import type {
   ClimberProfile,
   HoldCorrection,
   ImageInput,
+  PathOption,
   PathStep,
   Place,
   QualityResult,
@@ -87,6 +88,18 @@ export const httpApi: CapitanApi = {
     profile: ClimberProfile,
   ): Promise<PathStep[]> =>
     request(`/scans/${scanId}/routes/${routeId}/path-correction`, json({ steps, profile })),
+
+  getPathOptions: async (scanId: string, routeId: string, profile: ClimberProfile): Promise<PathOption[]> =>
+    (await request<{ options: PathOption[] }>(`/scans/${scanId}/routes/${routeId}/paths`, json(profile))).options,
+
+  choosePath: (
+    scanId: string,
+    routeId: string,
+    optionId: string,
+    shownIds: string[],
+    profile: ClimberProfile,
+  ): Promise<PathStep[]> =>
+    request(`/scans/${scanId}/routes/${routeId}/path-choice`, json({ optionId, shownIds, profile })),
 
   submitGrade: (routeId: string, grade: VGrade): Promise<Route> =>
     request(`/routes/${routeId}/grade`, json({ grade })),

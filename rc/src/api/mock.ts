@@ -7,6 +7,7 @@ import type {
   Hold,
   HoldCorrection,
   ImageInput,
+  PathOption,
   PathStep,
   Place,
   QualityResult,
@@ -143,6 +144,29 @@ export const mockApi: CapitanApi = {
     const saved = renumber(steps);
     pathOverrides[pathKey(scanId, routeId, profile)] = clone(saved);
     return clone(saved);
+  },
+
+  async getPathOptions(scanId: string, routeId: string, profile: ClimberProfile): Promise<PathOption[]> {
+    const suggested = await mockApi.getOptimalPath(scanId, routeId, profile);
+    // Mock alternative: the same path with every other intermediate hand hold skipped.
+    const alt = renumber(suggested.filter((s, i) => i < 2 || i === suggested.length - 1 || i % 2 === 0));
+    const options: PathOption[] = [{ id: 'recommended', label: 'Suggested', steps: suggested }];
+    if (alt.length !== suggested.length) options.push({ id: 'fewer', label: 'Fewer moves', steps: alt });
+    return options;
+  },
+
+  async choosePath(
+    scanId: string,
+    routeId: string,
+    optionId: string,
+    _shownIds: string[],
+    profile: ClimberProfile,
+  ): Promise<PathStep[]> {
+    const options = await mockApi.getPathOptions(scanId, routeId, profile);
+    const chosen = options.find((o) => o.id === optionId);
+    if (!chosen) throw new Error(`Path option ${optionId} not found`);
+    pathOverrides[pathKey(scanId, routeId, profile)] = clone(chosen.steps);
+    return clone(chosen.steps);
   },
 
   async submitGrade(routeId: string, grade: VGrade): Promise<Route> {

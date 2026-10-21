@@ -27,6 +27,9 @@ export type Hold = {
 
 export type PathStep = { order: number; holdId: string; limb: Limb };
 
+/** One of several betas offered for a route; the climber's pick is preference data. */
+export type PathOption = { id: string; label: string; steps: PathStep[] };
+
 export type Route = {
   id: string;
   color: string;
@@ -131,6 +134,18 @@ export interface CapitanApi {
   getOptimalPath(
     scanId: string,
     routeId: string,
+    profile: ClimberProfile,
+  ): Promise<PathStep[]>;
+  // 2–3 different betas for the climber to choose between ("Suggested" first; a saved
+  // path, if any, first as "Your path").
+  getPathOptions(scanId: string, routeId: string, profile: ClimberProfile): Promise<PathOption[]>;
+  // The climber's pick among the shown options: logged as preference data and kept as
+  // their path for this route. Returns the chosen steps.
+  choosePath(
+    scanId: string,
+    routeId: string,
+    optionId: string,
+    shownIds: string[],
     profile: ClimberProfile,
   ): Promise<PathStep[]>;
   submitGrade(routeId: string, grade: VGrade): Promise<Route>;
