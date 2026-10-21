@@ -1,8 +1,11 @@
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
-import { FlatList, Pressable, StyleSheet, View } from 'react-native';
-import Svg, { Defs, LinearGradient, Path, Rect, Stop } from 'react-native-svg';
+import { Alert, FlatList, Platform, StyleSheet, View } from 'react-native';
+import Animated from 'react-native-reanimated';
 
+import { Contours } from '@/components/contours';
+import { enter, Press, RollingText } from '@/components/motion';
+import { ScanDock } from '@/components/scan-dock';
 import { Icon, Screen, Text } from '@/components/ui';
 import { APP_NAME } from '@/config/app';
 import { useScans, type SavedScan } from '@/store/use-scans';
@@ -12,6 +15,7 @@ export default function Home() {
   const c = useThemeColors();
   const scans = useScans((s) => s.scans);
   const recent = scans.slice(0, 6);
+  const gymCount = new Set(scans.map((s) => s.placeId)).size;
 
   return (
     <Screen padded={false} edges={['top', 'left', 'right']}>
@@ -25,41 +29,65 @@ export default function Home() {
         />
         <Text style={[styles.wordmark, { fontFamily: Fonts.serif }]}>{APP_NAME}</Text>
         <View style={styles.flex} />
-        <Pressable
+        <Press
           onPress={() => router.push('/profile')}
-          accessibilityRole="button"
           accessibilityLabel="Profile"
           hitSlop={12}
+          scaleTo={0.9}
           style={[styles.avatar, { backgroundColor: c.surface, borderColor: c.border }]}
         >
           <Icon name="person.crop.circle" size={24} color={c.textSecondary} />
-        </Pressable>
+        </Press>
       </View>
 
-      <View style={styles.greeting}>
-        <Text style={[styles.greetingTitle, { fontFamily: Fonts.serif, color: c.text }]}>
-          Ready to climb?
-        </Text>
-        <Text variant="body" tone="secondary">
-          Scan a wall to map its holds and plan your next send.
-        </Text>
-        <Pressable
-          onPress={() => router.push('/how-it-works')}
-          accessibilityRole="button"
-          accessibilityLabel="How it works"
-          hitSlop={8}
-          style={styles.howLink}
-        >
-          <Text variant="label" tone="accent">
-            How it works
+      {scans.length === 0 ? (
+        <View style={styles.greeting}>
+          <Text style={[styles.greetingTitle, { fontFamily: Fonts.serif, color: c.text }]}>
+            Ready to climb?
           </Text>
-          <Icon name="chevron.right" size={14} color={c.accent} />
-        </Pressable>
-      </View>
+          <Text variant="body" tone="secondary">
+            Scan a wall to map its holds and plan your next send.
+          </Text>
+          <Press
+            onPress={() => router.push('/how-it-works')}
+            accessibilityLabel="How it works"
+            hitSlop={8}
+            style={styles.howLink}
+          >
+            <Text variant="label" tone="accent">
+              How it works
+            </Text>
+            <Icon name="chevron.right" size={14} color={c.accent} />
+          </Press>
+        </View>
+      ) : (
+        // Stats hero: the number rolls when a new scan lands.
+        <View style={styles.greeting}>
+          <View style={styles.statRow}>
+            <RollingText
+              value={String(scans.length)}
+              style={[styles.statNumber, { fontFamily: Fonts.serif, color: c.text }]}
+            />
+            <Text style={[styles.statUnit, { fontFamily: Fonts.serif, color: c.text }]}>
+              {scans.length === 1 ? 'wall scanned' : 'walls scanned'}
+            </Text>
+          </View>
+          <Text variant="body" tone="secondary">
+            Across {gymCount} {gymCount === 1 ? 'gym' : 'gyms'}. Latest at {scans[0].placeName}.
+          </Text>
+        </View>
+      )}
 
-      <Text variant="label" tone="secondary" style={styles.sectionLabel}>
-        RECENT SCANS
-      </Text>
+      <View style={styles.sectionRow}>
+        <Text style={[styles.sectionLabel, { fontFamily: Fonts.serif, color: c.text }]}>
+          Recent scans
+        </Text>
+        {recent.length > 0 ? (
+          <Text variant="caption" tone="secondary">
+            Hold a wall to delete it
+          </Text>
+        ) : null}
+      </View>
 
       {recent.length === 0 ? (
         <EmptyRecent />
@@ -70,7 +98,9 @@ export default function Home() {
           contentContainerStyle={styles.trail}
           showsVerticalScrollIndicator={false}
           renderItem={({ item, index }) => (
-            <TrailStop scan={item} first={index === 0} last={index === recent.length - 1} />
+            <Animated.View entering={enter(index)}>
+              <TrailStop scan={item} first={index === 0} last={index === recent.length - 1} />
+            </Animated.View>
           )}
         />
       )}
@@ -80,68 +110,40 @@ export default function Home() {
   );
 }
 
-/** Faint topographic contour lines behind the content (decorative). */
-function Contours({ color }: { color: string }) {
-  return (
-    <Svg
-      style={StyleSheet.absoluteFill}
-      pointerEvents="none"
-      preserveAspectRatio="xMidYMid slice"
-      viewBox="0 0 390 800"
-    >
-      <Path
-        d="M-20 120 C 90 90 150 160 250 130 S 430 150 430 150"
-        stroke={color}
-        strokeOpacity={0.14}
-        strokeWidth={1.3}
-        fill="none"
-      />
-      <Path
-        d="M-20 210 C 100 180 170 250 270 215 S 430 230 430 230"
-        stroke={color}
-        strokeOpacity={0.14}
-        strokeWidth={1.3}
-        fill="none"
-      />
-      <Path
-        d="M-20 330 C 80 300 160 360 260 325 S 430 340 430 340"
-        stroke={color}
-        strokeOpacity={0.12}
-        strokeWidth={1.3}
-        fill="none"
-      />
-      <Path
-        d="M-20 470 C 110 440 180 510 280 475 S 430 490 430 490"
-        stroke={color}
-        strokeOpacity={0.1}
-        strokeWidth={1.3}
-        fill="none"
-      />
-      <Path
-        d="M-20 620 C 90 590 160 660 265 625 S 430 640 430 640"
-        stroke={color}
-        strokeOpacity={0.08}
-        strokeWidth={1.3}
-        fill="none"
-      />
-    </Svg>
-  );
-}
-
 /** One recent scan as a waypoint on a dashed trail. */
 function TrailStop({ scan, first, last }: { scan: SavedScan; first: boolean; last: boolean }) {
   const c = useThemeColors();
+  const removeScan = useScans((s) => s.removeScan);
   const date = new Date(scan.createdAt).toLocaleDateString();
+
+  // Long-press → confirm → drop it from the climber's saved walls.
+  const confirmDelete = () => {
+    const title = 'Delete this wall?';
+    const message = `Your ${scan.placeName} scan from ${date} will be removed from your walls.`;
+    if (Platform.OS === 'web') {
+      if (window.confirm(`${title}\n\n${message}`)) removeScan(scan.scanId);
+      return;
+    }
+    Alert.alert(title, message, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => removeScan(scan.scanId) },
+    ]);
+  };
+
   return (
-    <Pressable
+    <Press
+      scaleTo={0.98}
       onPress={() =>
         router.push({
           pathname: '/scan/results',
           params: { scanId: scan.scanId, imageUri: scan.imageUri, placeName: scan.placeName },
         })
       }
-      accessibilityRole="button"
+      onLongPress={confirmDelete}
       accessibilityLabel={`Scan at ${scan.placeName}, ${date}`}
+      accessibilityHint="Long-press to delete"
+      accessibilityActions={[{ name: 'delete', label: 'Delete wall' }]}
+      onAccessibilityAction={(e) => e.nativeEvent.actionName === 'delete' && confirmDelete()}
       style={styles.trailRow}
     >
       <View style={styles.rail}>
@@ -164,7 +166,7 @@ function TrailStop({ scan, first, last }: { scan: SavedScan; first: boolean; las
         </View>
         <Icon name="chevron.right" size={16} color={c.textSecondary} />
       </View>
-    </Pressable>
+    </Press>
   );
 }
 
@@ -174,40 +176,8 @@ function EmptyRecent() {
     <View style={styles.empty}>
       <Icon name="camera.viewfinder" size={40} color={c.textSecondary} />
       <Text tone="secondary" style={styles.emptyText}>
-        No scans yet. Tap “Scan wall” to analyze your first route.
+        No scans yet. Tap “Scan wall” to map your first wall.
       </Text>
-    </View>
-  );
-}
-
-/** Moss pill docked bottom-center, floating above the content with a soft fade. */
-function ScanDock() {
-  const c = useThemeColors();
-  return (
-    <View style={styles.dock} pointerEvents="box-none">
-      <Svg style={StyleSheet.absoluteFill} pointerEvents="none">
-        <Defs>
-          <LinearGradient id="fade" x1="0" y1="0" x2="0" y2="1">
-            <Stop offset="0" stopColor={c.background} stopOpacity="0" />
-            <Stop offset="0.55" stopColor={c.background} stopOpacity="1" />
-          </LinearGradient>
-        </Defs>
-        <Rect x="0" y="0" width="100%" height="100%" fill="url(#fade)" />
-      </Svg>
-      <Pressable
-        onPress={() => router.push('/scan/mode')}
-        accessibilityRole="button"
-        accessibilityLabel="Scan wall"
-        style={({ pressed }) => [
-          styles.scanBtn,
-          { backgroundColor: pressed ? c.accentPressed : c.accent },
-        ]}
-      >
-        <Icon name="camera.viewfinder" size={22} color={c.onAccent} />
-        <Text variant="label" color={c.onAccent} style={styles.scanLabel}>
-          Scan wall
-        </Text>
-      </Pressable>
     </View>
   );
 }
@@ -234,12 +204,18 @@ const styles = StyleSheet.create({
   greeting: { paddingHorizontal: Spacing.lg, paddingTop: Spacing.lg, gap: 4 },
   greetingTitle: { fontSize: 30, fontWeight: '600' },
   howLink: { flexDirection: 'row', alignItems: 'center', gap: 2, paddingTop: Spacing.xs },
-  sectionLabel: {
+  statRow: { flexDirection: 'row', alignItems: 'baseline', gap: Spacing.sm },
+  statNumber: { fontSize: 52, fontWeight: '600', lineHeight: 60 },
+  statUnit: { fontSize: 24, fontWeight: '500' },
+  sectionRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.xl,
     paddingBottom: Spacing.sm,
-    letterSpacing: 1.2,
   },
+  sectionLabel: { fontSize: 20, fontWeight: '600' },
   trail: { paddingHorizontal: Spacing.lg, paddingBottom: 112 },
   trailRow: { flexDirection: 'row' },
   rail: { width: 28, alignItems: 'center' },
@@ -282,28 +258,4 @@ const styles = StyleSheet.create({
     paddingBottom: 112,
   },
   emptyText: { textAlign: 'center' },
-  dock: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: 128,
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    paddingBottom: Spacing.md,
-  },
-  scanBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-    height: 54,
-    paddingHorizontal: Spacing.lg,
-    borderRadius: Radius.pill,
-    shadowColor: '#2A2723',
-    shadowOpacity: 0.35,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 6,
-  },
-  scanLabel: { fontSize: 16, fontWeight: '700' },
 });

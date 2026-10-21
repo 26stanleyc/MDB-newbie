@@ -3,7 +3,7 @@ import { router } from 'expo-router';
 import { DeviceMotion } from 'expo-sensors';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { Vec3 } from '@/api';
 import { Button, Icon, MessageState, Screen, Text } from '@/components/ui';
@@ -37,6 +37,9 @@ export default function CameraScreen() {
   const addCapture = useScanDraft((s) => s.addCapture);
   const count = useScanDraft((s) => s.captures.length);
   const precise = mode === 'precise';
+  // Insets from the provider: <SafeAreaView> reports a zero top inset inside this
+  // full-screen modal, which put the top buttons under the status bar.
+  const insets = useSafeAreaInsets();
   // Warm the motion sensor so a fresh gravity vector is ready at the shutter.
   const gravityRef = useRef<Vec3 | undefined>(undefined);
 
@@ -145,7 +148,7 @@ export default function CameraScreen() {
         <View style={styles.guide} />
       </View>
 
-      <SafeAreaView style={styles.overlay}>
+      <View style={[styles.overlay, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
         <View style={styles.topBar}>
           <IconButton icon="xmark" label="Close" onPress={() => router.back()} />
           <View style={styles.topRight}>
@@ -226,7 +229,7 @@ export default function CameraScreen() {
             </View>
           </View>
         </View>
-      </SafeAreaView>
+      </View>
     </View>
   );
 }

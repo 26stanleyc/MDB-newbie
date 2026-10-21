@@ -17,7 +17,10 @@ export type SavedScan = {
 type ScansState = {
   scans: SavedScan[];
   places: Record<string, Pick<Place, 'id' | 'name'>>;
+  /** Scans the climber deleted; kept so starter walls don't come back on the next fetch. */
+  removed: string[];
   addScan: (scan: SavedScan) => void;
+  removeScan: (scanId: string) => void;
   placesWithScans: () => { id: string; name: string; count: number }[];
   scansForPlace: (placeId: string) => SavedScan[];
 };
@@ -28,9 +31,11 @@ export const useScans = create<ScansState>()(
     (set, get) => ({
       scans: [],
       places: {},
+      removed: [],
       addScan: (scan) =>
         set((s) => {
           if (s.scans.some((e) => e.scanId === scan.scanId)) return s; // dedupe
+          if (s.removed.includes(scan.scanId)) return s; // deleted by the climber
           return {
             scans: [scan, ...s.scans],
             places: {
@@ -39,6 +44,12 @@ export const useScans = create<ScansState>()(
             },
           };
         }),
+      // Only the climber's list: the server keeps the scan (it's training data).
+      removeScan: (scanId) =>
+        set((s) => ({
+          scans: s.scans.filter((e) => e.scanId !== scanId),
+          removed: [...s.removed, scanId],
+        })),
       placesWithScans: () => {
         const { scans, places } = get();
         const counts = new Map<string, number>();

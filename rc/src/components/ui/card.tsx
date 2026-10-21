@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react';
-import { Pressable, StyleSheet, View, type ViewStyle } from 'react-native';
+import { StyleSheet, View, type ViewStyle } from 'react-native';
+
+import { Press } from '@/components/motion';
 
 import { Radius, Spacing, useThemeColors } from '@/theme';
 
@@ -11,7 +13,7 @@ type Props = {
   accessibilityLabel?: string;
 };
 
-/** Sandstone surface card; pressable when onPress is provided. */
+/** Sandstone surface card; pressable (with a squish) when onPress is provided. */
 export function Card({ children, onPress, selected, style, accessibilityLabel }: Props) {
   const c = useThemeColors();
   const base: ViewStyle = {
@@ -22,15 +24,15 @@ export function Card({ children, onPress, selected, style, accessibilityLabel }:
 
   if (onPress) {
     return (
-      <Pressable
+      <Press
         onPress={onPress}
-        accessibilityRole="button"
+        scaleTo={0.98}
         accessibilityLabel={accessibilityLabel}
         accessibilityState={{ selected: !!selected }}
-        style={({ pressed }) => [styles.card, base, pressed && styles.pressed, style]}
+        style={[styles.card, base, style]}
       >
         {children}
-      </Pressable>
+      </Press>
     );
   }
   return <View style={[styles.card, base, style]}>{children}</View>;
@@ -41,5 +43,4 @@ const styles = StyleSheet.create({
     borderRadius: Radius.lg,
     padding: Spacing.md,
   },
-  pressed: { opacity: 0.9 },
 });

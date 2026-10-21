@@ -1,39 +1,36 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, View } from 'react-native';
+import { FlatList, StyleSheet, View } from 'react-native';
+import Animated, { SlideInDown } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppHeader } from '@/components/app-header';
+import { enter, Press, Springs } from '@/components/motion';
 import { WallView } from '@/components/wall-view';
-import {
-  Badge,
-  Button,
-  Card,
-  Icon,
-  Loading,
-  MessageState,
-  Screen,
-  Segmented,
-  Swatch,
-  Text,
-} from '@/components/ui';
+import { Button, Loading, MessageState, Screen, Swatch, Text } from '@/components/ui';
 import { api, type Route } from '@/api';
 import { useAsyncData } from '@/lib/use-async-data';
+import { useRoutePicker } from '@/lib/use-route-picker';
 import { Radius, Spacing, useThemeColors } from '@/theme';
 
 export default function ResultsScreen() {
-  const { scanId, placeName } = useLocalSearchParams<{ scanId: string; placeName: string }>();
+  const { scanId, placeName, step } = useLocalSearchParams<{
+    scanId: string;
+    placeName: string;
+    step?: 'verify';
+  }>();
   const c = useThemeColors();
+  const insets = useSafeAreaInsets();
   const { data: scan, error, reload } = useAsyncData(
     useCallback(() => api.getScan(scanId), [scanId]),
     [scanId],
   );
-  // Tapping a hold on the photo either picks it as a route's start or turns it off.
-  const [tapMode, setTapMode] = useState<'start' | 'off'>('start');
-  const [picking, setPicking] = useState(false);
-  const [pickError, setPickError] = useState<string | null>(null);
+  // A fresh scan starts by checking the holds; then the climber taps a start hold.
+  const [phase, setPhase] = useState<'verify' | 'start'>(step === 'verify' ? 'verify' : 'start');
   // Holds the climber tapped off on the photo; saved as delete corrections.
   const [off, setOff] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
+  const picker = useRoutePicker(scanId, scan?.holds ?? []);
 
   const toggleHold = (id: string) =>
     setOff((prev) => {
@@ -43,37 +40,36 @@ export default function ResultsScreen() {
       return next;
     });
 
-  // Start hold → the backend suggests the rest of the route → review it on the pick screen.
-  const pickStart = async (holdId: string) => {
-    if (picking) return;
-    setPicking(true);
-    setPickError(null);
-    try {
-      const ids = await api.suggestRoute(scanId, holdId);
-      router.push({
-        pathname: '/scan/pick-route',
-        params: { scanId, placeName, start: holdId, holds: ids.join(',') },
-      });
-    } catch (e) {
-      setPickError(e instanceof Error ? e.message : 'Couldn’t suggest a route from that hold.');
-    } finally {
-      setPicking(false);
-    }
-  };
-
-  const saveOff = async () => {
+  // Saves turned-off outlines, then marks the scan reviewed: the holds left are now
+  // trusted as training labels (backend scripts/export_feedback.py).
+  const confirmHolds = async () => {
     setSaving(true);
     try {
-      await api.submitCorrections(
-        scanId,
-        [...off].map((holdId) => ({ kind: 'delete' as const, holdId })),
-      );
-      setOff(new Set());
-      reload(); // routes are regrouped without the removed holds
+      if (off.size > 0) {
+        await api.submitCorrections(
+          scanId,
+          [...off].map((holdId) => ({ kind: 'delete' as const, holdId })),
+        );
+        setOff(new Set());
+      }
+      // Training data only: picking a route still works if this fails.
+      await api.reviewScan(scanId).catch(() => {});
+      if (off.size > 0) reload(); // routes are regrouped without the removed holds
     } finally {
       setSaving(false);
     }
+    setPhase('start');
   };
+
+  const takeRoute = async () => {
+    const route = await picker.save();
+    if (route) {
+      router.push({ pathname: '/scan/path', params: { scanId, routeId: route.id, placeName } });
+    }
+  };
+
+  const openRoute = (route: Route) =>
+    router.push({ pathname: '/scan/path', params: { scanId, routeId: route.id, placeName } });
 
   if (error) {
     return (
@@ -100,25 +96,26 @@ export default function ResultsScreen() {
   }
 
   const lowConfidence = scan.holds.some((h) => h.confidence < 0.6);
+  const fresh = step === 'verify';
 
   return (
-    <Screen padded={false}>
+    // The sheet runs to the bottom edge itself (no light strip under it).
+    <Screen padded={false} edges={['top', 'left', 'right']}>
       <View style={styles.headerWrap}>
         <AppHeader
           title={placeName}
           right={
-            <Pressable
+            <Press
               onPress={() =>
                 router.push({ pathname: '/scan/correct', params: { scanId, placeName } })
               }
-              accessibilityRole="button"
               accessibilityLabel="Fix detection"
               hitSlop={8}
             >
               <Text variant="label" tone="accent">
                 Fix
               </Text>
-            </Pressable>
+            </Press>
           }
         />
       </View>
@@ -127,114 +124,132 @@ export default function ResultsScreen() {
         uri={scan.imageUri}
         holds={scan.holds}
         offHoldIds={off}
-        onHoldPress={tapMode === 'start' ? pickStart : toggleHold}
+        selectedHoldIds={phase === 'start' && picker.startId ? picker.selected : undefined}
+        onHoldPress={phase === 'verify' ? toggleHold : picker.tap}
         style={styles.wall}
       />
 
-      <View style={[styles.sheet, { backgroundColor: c.surface, borderColor: c.border }]}>
-        <Segmented
-          options={[
-            { label: 'Pick start', value: 'start' },
-            { label: 'Turn off holds', value: 'off' },
-          ]}
-          value={tapMode}
-          onChange={setTapMode}
-        />
-        <Text variant="caption" tone={pickError ? 'destructive' : 'secondary'} style={styles.hint}>
-          {pickError ??
-            (picking
-              ? 'Finding the route…'
-              : tapMode === 'start'
-                ? 'Tap a start hold on the photo to plan that route.'
-                : 'Tap holds on the photo that aren’t holds (people, volumes) to turn them off.')}
-        </Text>
-
-        {off.size > 0 ? (
-          <View style={styles.offBar}>
-            <Text variant="caption" tone="secondary" style={styles.flex}>
-              {off.size} {off.size === 1 ? 'hold' : 'holds'} turned off
+      <Animated.View
+        entering={SlideInDown.springify()
+          .damping(Springs.settle.damping)
+          .stiffness(Springs.settle.stiffness)}
+        style={[
+          styles.sheet,
+          {
+            backgroundColor: c.surface,
+            borderColor: c.border,
+            paddingBottom: insets.bottom + Spacing.md,
+          },
+        ]}
+      >
+        {phase === 'verify' ? (
+          <>
+            <Text variant="caption" tone="secondary">
+              Step 1 of 2
+            </Text>
+            <Text variant="heading">Check the holds</Text>
+            <Text variant="caption" tone="secondary">
+              Tap anything outlined that isn’t a hold (people, volumes, shadows) to turn it off.
+              {lowConfidence ? ' Some detections are low-confidence.' : ''}
+            </Text>
+            {off.size > 0 ? (
+              <View style={styles.inlineRow}>
+                <Text variant="caption" tone="secondary" style={styles.flex}>
+                  {off.size} {off.size === 1 ? 'outline' : 'outlines'} turned off
+                </Text>
+                <Press onPress={() => setOff(new Set())} hitSlop={8} accessibilityLabel="Undo">
+                  <Text variant="label" tone="accent">
+                    Undo
+                  </Text>
+                </Press>
+              </View>
+            ) : null}
+            <Button
+              title={off.size > 0 ? 'Save and pick a route' : 'Holds look right'}
+              onPress={confirmHolds}
+              loading={saving}
+            />
+          </>
+        ) : picker.startId ? (
+          <>
+            <Text variant="heading">
+              {picker.selected.size} {picker.selected.size === 1 ? 'hold' : 'holds'} in this route
+            </Text>
+            <Text variant="caption" tone={picker.error ? 'destructive' : 'secondary'}>
+              {picker.error ?? 'Tap holds to add or remove them.'}
             </Text>
             <Button
-              title="Undo"
-              variant="ghost"
-              fullWidth={false}
-              onPress={() => setOff(new Set())}
-              disabled={saving}
+              title="Use this route"
+              onPress={takeRoute}
+              loading={picker.busy}
+              disabled={picker.selected.size === 0}
             />
-            <Button title="Save" fullWidth={false} onPress={saveOff} loading={saving} />
-          </View>
-        ) : lowConfidence ? (
-          <View style={styles.warning}>
-            <Icon name="exclamationmark.triangle.fill" size={14} color={c.warning} />
-            <Text variant="caption" tone="secondary" style={styles.flex}>
-              Some holds are low-confidence. Turn off wrong ones or tap “Fix”.
-            </Text>
-          </View>
-        ) : null}
-
-        <Text variant="heading" style={styles.sheetTitle}>
-          Routes
-        </Text>
-
-        {scan.routes.length === 0 ? (
-          <MessageState
-            icon="questionmark.circle"
-            title="No routes found"
-            message="We couldn’t group these holds into routes. Try fixing detection or retaking the photo."
-            actionLabel="Fix detection"
-            onAction={() =>
-              router.push({ pathname: '/scan/correct', params: { scanId, placeName } })
-            }
-          />
+            <Button title="Pick a different start" variant="ghost" onPress={picker.reset} />
+          </>
         ) : (
-          <FlatList
-            data={scan.routes}
-            keyExtractor={(r) => r.id}
-            contentContainerStyle={styles.list}
-            renderItem={({ item }) => (
-              <RouteRow
-                route={item}
-                onPress={() =>
-                  router.push({
-                    pathname: '/scan/path',
-                    params: { scanId, routeId: item.id, placeName },
-                  })
-                }
-              />
-            )}
-          />
+          <>
+            {fresh ? (
+              <Text variant="caption" tone="secondary">
+                Step 2 of 2
+              </Text>
+            ) : null}
+            <View style={styles.inlineRow}>
+              <Text variant="heading" style={styles.flex}>
+                Tap the start hold
+              </Text>
+              <Press onPress={() => setPhase('verify')} hitSlop={8} accessibilityLabel="Check holds">
+                <Text variant="label" tone="accent">
+                  Check holds
+                </Text>
+              </Press>
+            </View>
+            <Text variant="caption" tone={picker.error ? 'destructive' : 'secondary'}>
+              {picker.error ??
+                (picker.busy ? 'Finding the route…' : 'The rest of the route lights up.')}
+            </Text>
+            {scan.routes.length > 0 ? (
+              <>
+                <Text variant="caption" tone="secondary" style={styles.orLabel}>
+                  Or open a detected route
+                </Text>
+                <FlatList
+                  horizontal
+                  data={scan.routes}
+                  keyExtractor={(r) => r.id}
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.chips}
+                  renderItem={({ item, index }) => (
+                    <Animated.View entering={enter(index + 2)}>
+                      <RouteChip route={item} onPress={() => openRoute(item)} />
+                    </Animated.View>
+                  )}
+                />
+              </>
+            ) : null}
+          </>
         )}
-      </View>
+      </Animated.View>
     </Screen>
   );
 }
 
-function RouteRow({ route, onPress }: { route: Route; onPress: () => void }) {
+function RouteChip({ route, onPress }: { route: Route; onPress: () => void }) {
   const c = useThemeColors();
   const g = route.communityGrade;
   return (
-    <Card onPress={onPress} accessibilityLabel={`${route.displayName} route`} style={styles.row}>
-      <Swatch color={route.color} />
-      <View style={styles.flex}>
+    <Press
+      onPress={onPress}
+      accessibilityLabel={`${route.displayName} route, ${route.holdIds.length} holds`}
+      style={[styles.chip, { backgroundColor: c.background, borderColor: c.border }]}
+    >
+      <Swatch color={route.color} size={18} />
+      <View>
         <Text variant="label">{route.displayName}</Text>
         <Text variant="caption" tone="secondary">
-          {route.holdIds.length} holds
+          {route.holdIds.length} holds{g ? ` · ${g.grade}` : ''}
         </Text>
       </View>
-      {g ? (
-        <View style={styles.grade}>
-          <Badge label={g.grade} />
-          <Text variant="caption" tone="secondary">
-            {g.votes} {g.votes === 1 ? 'vote' : 'votes'}
-          </Text>
-        </View>
-      ) : (
-        <Text variant="caption" tone="secondary">
-          Ungraded
-        </Text>
-      )}
-      <Icon name="chevron.right" size={16} color={c.textSecondary} />
-    </Card>
+    </Press>
   );
 }
 
@@ -243,18 +258,23 @@ const styles = StyleSheet.create({
   headerWrap: { paddingHorizontal: Spacing.lg, paddingTop: Spacing.sm },
   wall: { flex: 1 },
   sheet: {
-    maxHeight: '46%',
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopLeftRadius: Radius.lg,
     borderTopRightRadius: Radius.lg,
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.md,
+    gap: Spacing.sm,
   },
-  hint: { marginTop: Spacing.sm, marginBottom: Spacing.sm },
-  offBar: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.sm },
-  warning: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.sm },
-  sheetTitle: { marginBottom: Spacing.sm },
-  list: { gap: Spacing.sm, paddingBottom: Spacing.xl },
-  row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
-  grade: { alignItems: 'flex-end', gap: 2 },
+  inlineRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  orLabel: { marginTop: Spacing.xs },
+  chips: { gap: Spacing.sm },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderRadius: Radius.md,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
 });

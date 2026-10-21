@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
+import { IslandToast } from '@/components/motion';
 import { useSession } from '@/store/use-session';
 
 SplashScreen.preventAutoHideAsync();
@@ -28,6 +29,7 @@ export default function RootLayout() {
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="scan/camera" options={{ presentation: 'fullScreenModal' }} />
         </Stack>
+        <IslandToast />
         <StatusBar style="auto" />
       </SafeAreaProvider>
     </GestureHandlerRootView>

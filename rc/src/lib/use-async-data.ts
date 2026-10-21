@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 type State<T> = { data?: T; loading: boolean; error: boolean };
 
@@ -10,12 +10,14 @@ type State<T> = { data?: T; loading: boolean; error: boolean };
 export function useAsyncData<T>(loader: () => Promise<T>, deps: unknown[]) {
   const [state, setState] = useState<State<T>>({ loading: true, error: false });
 
-  const reload = () => {
+  // Stable identity (the eslint-disable below makes the React Compiler skip
+  // this hook), so screens can safely list `reload` as an effect dependency.
+  const reload = useCallback(() => {
     setState({ loading: true, error: false });
     loader()
       .then((data) => setState({ data, loading: false, error: false }))
       .catch(() => setState({ loading: false, error: true }));
-  };
+  }, [loader]);
 
   useEffect(() => {
     let cancelled = false;

@@ -103,6 +103,9 @@ export default function ProfileScreen() {
           {__DEV__ ? (
             <Button title="Dev menu" variant="secondary" onPress={() => router.push('/dev')} />
           ) : null}
+          {__DEV__ ? (
+            <Button title="Design lab" variant="secondary" onPress={() => router.push('/lab')} />
+          ) : null}
 
           <Button title="Sign out" variant="ghost" onPress={confirmSignOut} />
         </ScrollView>

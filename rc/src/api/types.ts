@@ -58,6 +58,7 @@ export type Scan = {
   holds: Hold[];
   routes: Route[];
   analysis?: 'pending' | 'done' | 'failed'; // hold quality + wall angle phase
+  reviewedAt?: string; // the climber confirmed the holds look right (training-grade labels)
   wall?: {
     angleDeg: number | null; // main wall vs vertical (needs CaptureMeta.gravity)
     source: 'gravity' | 'no_gravity';
@@ -162,6 +163,8 @@ export interface CapitanApi {
   submitGrade(routeId: string, grade: VGrade): Promise<Route>;
   // returns the updated scan with corrections applied
   submitCorrections(scanId: string, corrections: HoldCorrection[]): Promise<Scan>;
+  // The climber confirms every hold on the photo looks right; returns the updated scan.
+  reviewScan(scanId: string): Promise<Scan>;
   // Tap-to-pick: hold ids of the route that likely starts at the tapped hold.
   suggestRoute(scanId: string, startHoldId: string): Promise<string[]>;
   // Save a climber-picked route (also labeled training data). Returns the new route.

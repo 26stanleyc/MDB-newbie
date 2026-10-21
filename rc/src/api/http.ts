@@ -110,6 +110,9 @@ export const httpApi: CapitanApi = {
   submitCorrections: (scanId: string, corrections: HoldCorrection[]): Promise<Scan> =>
     request(`/scans/${scanId}/corrections`, json({ corrections })),
 
+  reviewScan: (scanId: string): Promise<Scan> =>
+    request(`/scans/${scanId}/review`, { method: 'POST' }),
+
   suggestRoute: async (scanId: string, startHoldId: string): Promise<string[]> =>
     (await request<{ holdIds: string[] }>(`/scans/${scanId}/routes/suggest`, json({ startHoldId }))).holdIds,
 

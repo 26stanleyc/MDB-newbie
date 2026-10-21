@@ -1,11 +1,8 @@
-import {
-  ActivityIndicator,
-  Pressable,
-  StyleSheet,
-  Text,
-  type ViewStyle,
-} from 'react-native';
+import { useEffect } from 'react';
+import { ActivityIndicator, StyleSheet, Text, type ViewStyle } from 'react-native';
+import Animated, { interpolate, useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
+import { Press, Springs } from '@/components/motion';
 import { Radius, Spacing, TextStyles, useThemeColors } from '@/theme';
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'destructive';
@@ -20,7 +17,10 @@ type Props = {
   style?: ViewStyle;
 };
 
-/** Primary action button. ≥44pt tap target (MASTER.md / iOS). */
+/**
+ * Primary action button. ≥44pt tap target (MASTER.md / iOS). Squishes on
+ * press; the label morphs into a spinner while loading instead of swapping.
+ */
 export function Button({
   title,
   onPress,
@@ -46,30 +46,50 @@ export function Button({
         ? c.text
         : c.accent;
 
+  const busy = useSharedValue(loading ? 1 : 0);
+  const off = useSharedValue(disabled ? 1 : 0);
+  useEffect(() => {
+    busy.value = withSpring(loading ? 1 : 0, Springs.settle);
+    off.value = withSpring(disabled ? 1 : 0, Springs.settle);
+  }, [loading, disabled, busy, off]);
+
+  const labelStyle = useAnimatedStyle(() => ({
+    opacity: 1 - busy.value,
+    transform: [{ scale: interpolate(busy.value, [0, 1], [1, 0.8]) }],
+  }));
+  const spinnerStyle = useAnimatedStyle(() => ({
+    opacity: busy.value,
+    transform: [{ scale: interpolate(busy.value, [0, 1], [0.6, 1]) }],
+  }));
+  const dimStyle = useAnimatedStyle(() => ({ opacity: interpolate(off.value, [0, 1], [1, 0.45]) }));
+
   return (
-    <Pressable
+    <Press
       onPress={onPress}
       disabled={isDisabled}
-      accessibilityRole="button"
+      haptic={variant === 'primary'}
       accessibilityState={{ disabled: isDisabled, busy: loading }}
-      style={({ pressed }) => [
+      accessibilityLabel={title}
+      style={[
         styles.base,
         fullWidth && styles.fullWidth,
         {
           backgroundColor: bg,
           borderColor: c.border,
           borderWidth: variant === 'secondary' ? StyleSheet.hairlineWidth * 2 : 0,
-          opacity: isDisabled ? 0.5 : pressed ? 0.85 : 1,
         },
         style,
       ]}
     >
-      {loading ? (
+      <Animated.View style={dimStyle}>
+        <Animated.View style={labelStyle}>
+          <Text style={[TextStyles.label, { color: fg }]}>{title}</Text>
+        </Animated.View>
+      </Animated.View>
+      <Animated.View style={[StyleSheet.absoluteFill, styles.center, spinnerStyle]} pointerEvents="none">
         <ActivityIndicator color={fg} />
-      ) : (
-        <Text style={[TextStyles.label, { color: fg }]}>{title}</Text>
-      )}
-    </Pressable>
+      </Animated.View>
+    </Press>
   );
 }
 
@@ -82,4 +102,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
   },
   fullWidth: { alignSelf: 'stretch' },
+  center: { alignItems: 'center', justifyContent: 'center' },
 });

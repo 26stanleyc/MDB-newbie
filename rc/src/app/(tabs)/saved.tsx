@@ -1,10 +1,12 @@
 import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { useEffect } from 'react';
-import { FlatList, Pressable, StyleSheet, View } from 'react-native';
+import { FlatList, StyleSheet, View } from 'react-native';
+import Animated from 'react-native-reanimated';
 
 import { api } from '@/api';
 import { Contours } from '@/components/contours';
+import { enter, Press } from '@/components/motion';
 import { Icon, Screen, Text } from '@/components/ui';
 import { useScans, type SavedScan } from '@/store/use-scans';
 import { Fonts, Radius, Spacing, useThemeColors } from '@/theme';
@@ -68,7 +70,11 @@ export default function Saved() {
           keyExtractor={(g) => g.id}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
-          renderItem={({ item }) => <GymCard gym={item} />}
+          renderItem={({ item, index }) => (
+            <Animated.View entering={enter(index)}>
+              <GymCard gym={item} />
+            </Animated.View>
+          )}
         />
       )}
     </Screen>
@@ -83,14 +89,11 @@ function GymCard({ gym }: { gym: Gym }) {
   const more = count - shown.length;
 
   return (
-    <Pressable
+    <Press
+      scaleTo={0.98}
       onPress={() => router.push(`/place/${gym.id}`)}
-      accessibilityRole="button"
       accessibilityLabel={`${gym.name}, ${count} ${count === 1 ? 'wall' : 'walls'}`}
-      style={({ pressed }) => [
-        styles.card,
-        { backgroundColor: c.surface, borderColor: c.border, opacity: pressed ? 0.85 : 1 },
-      ]}
+      style={[styles.card, { backgroundColor: c.surface, borderColor: c.border }]}
     >
       <View style={styles.thumbs}>
         {shown.map((s, i) => (
@@ -118,7 +121,7 @@ function GymCard({ gym }: { gym: Gym }) {
         </View>
         <Icon name="chevron.right" size={16} color={c.textSecondary} />
       </View>
-    </Pressable>
+    </Press>
   );
 }
 

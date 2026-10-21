@@ -1,6 +1,7 @@
 import { router } from 'expo-router';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
+import { Press } from '@/components/motion';
 import { Icon, Text } from '@/components/ui';
 import { Spacing } from '@/theme';
 
@@ -18,15 +19,15 @@ export function AppHeader({ title, hideBack, right }: Props) {
     <View style={styles.row}>
       <View style={styles.side}>
         {!hideBack && router.canGoBack() ? (
-          <Pressable
+          <Press
             onPress={() => router.back()}
-            accessibilityRole="button"
             accessibilityLabel="Go back"
             hitSlop={12}
+            scaleTo={0.85}
             style={styles.back}
           >
             <Icon name="chevron.left" size={20} />
-          </Pressable>
+          </Press>
         ) : null}
       </View>
       <Text variant="label" numberOfLines={1} style={styles.title}>

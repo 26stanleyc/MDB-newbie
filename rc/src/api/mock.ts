@@ -232,6 +232,14 @@ export const mockApi: CapitanApi = {
     return clone(scan);
   },
 
+  async reviewScan(scanId: string): Promise<Scan> {
+    await delay(300);
+    const scan = scans[scanId];
+    if (!scan) throw new Error(`Scan ${scanId} not found`);
+    scan.reviewedAt = new Date().toISOString();
+    return clone(scan);
+  },
+
   async suggestRoute(scanId: string, startHoldId: string): Promise<string[]> {
     await delay(400 + Math.random() * 400);
     const scan = scans[scanId];

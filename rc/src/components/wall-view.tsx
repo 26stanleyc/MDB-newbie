@@ -2,7 +2,7 @@ import { Image } from 'expo-image';
 import { useState } from 'react';
 import { StyleSheet, View, type ViewStyle } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
+import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 import Svg, { Circle, Polygon, Rect, Text as SvgText } from 'react-native-svg';
 
 import type { Hold, PathStep, Point } from '@/api';
@@ -28,6 +28,29 @@ function centroid(poly: Point[]): Point {
     y: poly.reduce((s, p) => s + p.y, 0) / n,
   };
 }
+
+/** Ray-casting point-in-polygon, in normalized image coordinates. */
+function contains(poly: Point[], p: Point): boolean {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i];
+    const b = poly[j];
+    if (a.y > p.y !== b.y > p.y && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+function area(poly: Point[]): number {
+  let s = 0;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    s += (poly[j].x + poly[i].x) * (poly[j].y - poly[i].y);
+  }
+  return Math.abs(s / 2);
+}
+
+const TAP_SLOP_PX = 14; // a tap this close to a small hold still counts
 
 function toPoints(poly: Point[], w: number, h: number): string {
   return poly.map((p) => `${p.x * w},${p.y * h}`).join(' ');
@@ -92,12 +115,6 @@ export function WallView({
       savedTy.value = 0;
     });
 
-  const composed = Gesture.Simultaneous(pinch, Gesture.Exclusive(doubleTap, pan));
-
-  const animStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: tx.value }, { translateY: ty.value }, { scale: scale.value }],
-  }));
-
   // Fit the image inside the measured box ("contain").
   let dispW = 0;
   let dispH = 0;
@@ -105,6 +122,40 @@ export function WallView({
     dispW = Math.min(box.w, box.h * aspect);
     dispH = dispW / aspect;
   }
+
+  // Hold taps go through the gesture handler: on iOS it claims touches before
+  // react-native-svg's own onPress ever sees them. x/y are in the container's
+  // own (unzoomed) coordinates; the image is centered inside it.
+  const hitTest = (x: number, y: number) => {
+    if (!onHoldPress || dispW === 0) return;
+    const p = { x: (x - (box.w - dispW) / 2) / dispW, y: (y - (box.h - dispH) / 2) / dispH };
+    const hits = holds.filter((h) => contains(h.polygon, p));
+    if (hits.length) {
+      // Overlapping outlines: the smallest one is the hold the climber meant.
+      onHoldPress(hits.reduce((a, b) => (area(b.polygon) < area(a.polygon) ? b : a)).id);
+      return;
+    }
+    let best: { id: string; d: number } | null = null;
+    for (const h of holds) {
+      const c = centroid(h.polygon);
+      const d = Math.hypot((c.x - p.x) * dispW, (c.y - p.y) * dispH);
+      if (d < TAP_SLOP_PX && (!best || d < best.d)) best = { id: h.id, d };
+    }
+    if (best) onHoldPress(best.id);
+  };
+
+  const singleTap = Gesture.Tap()
+    .enabled(!!onHoldPress)
+    .onEnd((e, success) => {
+      'worklet';
+      if (success) runOnJS(hitTest)(e.x, e.y);
+    });
+
+  const composed = Gesture.Simultaneous(pinch, Gesture.Exclusive(doubleTap, singleTap, pan));
+
+  const animStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: tx.value }, { translateY: ty.value }, { scale: scale.value }],
+  }));
 
   const dimming = !!selectedHoldIds;
 
@@ -145,7 +196,6 @@ export function WallView({
                         strokeOpacity={0.6}
                         strokeWidth={1.5}
                         strokeDasharray="4 4"
-                        onPress={onHoldPress ? () => onHoldPress(h.id) : undefined}
                       />
                     );
                   }
@@ -158,7 +208,6 @@ export function WallView({
                       stroke={selected ? '#FFFFFF' : color}
                       strokeOpacity={selected ? 0.95 : 0.25}
                       strokeWidth={selected ? 3 : 1.5}
-                      onPress={onHoldPress ? () => onHoldPress(h.id) : undefined}
                     />
                   );
                 })}

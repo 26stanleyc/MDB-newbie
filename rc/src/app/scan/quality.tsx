@@ -45,7 +45,8 @@ export default function QualityScreen() {
           pathname: '/scan/processing',
           params: { scanId, uri: images[0].uri, placeId, placeName },
         });
-      } catch {
+      } catch (e) {
+        console.warn('Scan upload failed:', e);
         if (!cancelled) setPhase({ kind: 'error' });
       }
     })();

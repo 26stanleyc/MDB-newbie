@@ -1,12 +1,20 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import Animated, { FadeOut } from 'react-native-reanimated';
 
-import { Button, Loading, MessageState, Screen } from '@/components/ui';
+import { enter } from '@/components/motion';
+import { Button, MessageState, Screen, Text } from '@/components/ui';
 import { api, type Scan } from '@/api';
 import { weakDetection } from '@/lib/detection-check';
 import { useScanDraft } from '@/store/use-scan-draft';
 import { useScans } from '@/store/use-scans';
+import { useToast } from '@/store/use-toast';
+import { Fonts, Spacing, useThemeColors } from '@/theme';
+
+// What the pipeline is doing, in climber terms. Cycles while we poll.
+const STAGES = ['Finding holds', 'Grouping routes by color', 'Measuring the wall'];
+const STAGE_MS = 1500;
 
 const POLL_MS = 1200;
 
@@ -17,10 +25,18 @@ export default function ProcessingScreen() {
     placeName: string;
   }>();
   const addScan = useScans((s) => s.addScan);
+  const toastDone = useToast((s) => s.done);
   const [failed, setFailed] = useState(false);
   // Detections too weak to trust: suggest a retake before showing results.
   const [weak, setWeak] = useState<{ scan: Scan; reason: string } | null>(null);
   const precise = useScanDraft((s) => s.mode) === 'precise';
+  const [stage, setStage] = useState(0);
+  const c = useThemeColors();
+
+  useEffect(() => {
+    const t = setInterval(() => setStage((i) => Math.min(i + 1, STAGES.length - 1)), STAGE_MS);
+    return () => clearInterval(t);
+  }, []);
 
   // Save the scan and show its routes.
   const finish = useCallback(
@@ -32,9 +48,13 @@ export default function ProcessingScreen() {
         imageUri: scan.imageUri,
         createdAt: scan.createdAt,
       });
-      router.replace({ pathname: '/scan/results', params: { scanId, uri, placeName } });
+      toastDone(`${scan.routes.length} ${scan.routes.length === 1 ? 'route' : 'routes'} found`);
+      router.replace({
+        pathname: '/scan/results',
+        params: { scanId, uri, placeName, step: 'verify' }, // check the holds first
+      });
     },
-    [scanId, uri, placeName, addScan],
+    [scanId, uri, placeName, addScan, toastDone],
   );
 
   useEffect(() => {
@@ -99,7 +119,21 @@ export default function ProcessingScreen() {
   return (
     <Screen>
       <View style={styles.body}>
-        <Loading label="Analyzing wall…" />
+        <ActivityIndicator color={c.accent} />
+        {/* Each stage rolls in as the last one fades. */}
+        <Animated.View key={stage} entering={enter()} exiting={FadeOut.duration(150)}>
+          <Text style={[styles.stage, { fontFamily: Fonts.serif, color: c.text }]}>
+            {STAGES[stage]}
+          </Text>
+        </Animated.View>
+        <View style={styles.dots}>
+          {STAGES.map((s, i) => (
+            <View
+              key={s}
+              style={[styles.dot, { backgroundColor: i <= stage ? c.accent : c.border }]}
+            />
+          ))}
+        </View>
       </View>
       <Button title="Cancel" variant="ghost" onPress={() => router.dismissTo('/home')} />
     </Screen>
@@ -107,5 +141,8 @@ export default function ProcessingScreen() {
 }
 
 const styles = StyleSheet.create({
-  body: { flex: 1 },
+  body: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.md },
+  stage: { fontSize: 26, fontWeight: '600', textAlign: 'center' },
+  dots: { flexDirection: 'row', gap: Spacing.sm },
+  dot: { width: 8, height: 8, borderRadius: 4 },
 });

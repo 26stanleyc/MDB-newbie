@@ -1,7 +1,9 @@
 import { router } from 'expo-router';
 import { StyleSheet, View } from 'react-native';
+import Animated from 'react-native-reanimated';
 
 import { AppHeader } from '@/components/app-header';
+import { enter } from '@/components/motion';
 import { Card, Icon, Screen, Text } from '@/components/ui';
 import type { ScanMode } from '@/api';
 import { useScanDraft } from '@/store/use-scan-draft';
@@ -43,19 +45,21 @@ export default function ScanModeScreen() {
         How do you want to capture this wall?
       </Text>
       <View style={styles.list}>
-        {OPTIONS.map((o) => (
-          <Card key={o.mode} onPress={() => choose(o.mode)} accessibilityLabel={o.title} style={styles.card}>
-            <View style={styles.row}>
-              <Icon name={o.icon} size={28} color={c.accent} />
-              <Text variant="heading" style={styles.flex}>
-                {o.title}
+        {OPTIONS.map((o, i) => (
+          <Animated.View key={o.mode} entering={enter(i)}>
+            <Card onPress={() => choose(o.mode)} accessibilityLabel={o.title} style={styles.card}>
+              <View style={styles.row}>
+                <Icon name={o.icon} size={28} color={c.accent} />
+                <Text variant="heading" style={styles.flex}>
+                  {o.title}
+                </Text>
+                <Icon name="chevron.right" size={16} color={c.textSecondary} />
+              </View>
+              <Text tone="secondary" variant="caption">
+                {o.blurb}
               </Text>
-              <Icon name="chevron.right" size={16} color={c.textSecondary} />
-            </View>
-            <Text tone="secondary" variant="caption">
-              {o.blurb}
-            </Text>
-          </Card>
+            </Card>
+          </Animated.View>
         ))}
       </View>
     </Screen>
