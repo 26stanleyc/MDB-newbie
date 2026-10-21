@@ -13,16 +13,25 @@ import { Radius, Spacing, useThemeColors } from '@/theme';
  * Tap-to-pick a route: tap the start hold, the backend suggests the rest of the
  * route (same color, within reach, above the start), then tap holds to add or
  * remove before saving (Reset picks a new start). Works where routes share a color or colors are misread.
+ * The results screen can open it with a start already picked (`start` + suggested `holds`).
  */
 export default function PickRouteScreen() {
-  const { scanId, placeName } = useLocalSearchParams<{ scanId: string; placeName: string }>();
+  const params = useLocalSearchParams<{
+    scanId: string;
+    placeName: string;
+    start?: string;
+    holds?: string; // comma-separated suggested hold ids
+  }>();
+  const { scanId, placeName } = params;
   const c = useThemeColors();
   const { data: scan, error, reload } = useAsyncData(
     useCallback(() => api.getScan(scanId), [scanId]),
     [scanId],
   );
-  const [startId, setStartId] = useState<string | null>(null);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [startId, setStartId] = useState<string | null>(params.start ?? null);
+  const [selected, setSelected] = useState<Set<string>>(
+    () => new Set(params.start ? (params.holds ?? params.start).split(',') : []),
+  );
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<string | null>(null);
 

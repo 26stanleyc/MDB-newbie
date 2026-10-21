@@ -1,17 +1,23 @@
+import { Image } from 'expo-image';
 import { router } from 'expo-router';
 import { useEffect } from 'react';
-import { FlatList, StyleSheet, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, View } from 'react-native';
 
 import { api } from '@/api';
-import { Card, Icon, MessageState, Screen, Text } from '@/components/ui';
-import { useScans } from '@/store/use-scans';
-import { Spacing, useThemeColors } from '@/theme';
+import { Contours } from '@/components/contours';
+import { Icon, Screen, Text } from '@/components/ui';
+import { useScans, type SavedScan } from '@/store/use-scans';
+import { Fonts, Radius, Spacing, useThemeColors } from '@/theme';
+
+const THUMBS = 3; // wall previews per gym card
+
+type Gym = { id: string; name: string; scans: SavedScan[] };
 
 export default function Saved() {
-  const placesWithScans = useScans((s) => s.placesWithScans);
+  const c = useThemeColors();
+  const scans = useScans((s) => s.scans);
+  const places = useScans((s) => s.places);
   const addScan = useScans((s) => s.addScan);
-  useScans((s) => s.scans); // subscribe, so added scans re-render the list
-  const places = placesWithScans();
 
   // Starter walls from the backend join the saved list (addScan skips duplicates).
   useEffect(() => {
@@ -21,54 +27,135 @@ export default function Saved() {
       .catch(() => {}); // offline / no backend: just the climber's own scans
   }, [addScan]);
 
-  return (
-    <Screen>
-      <Text variant="title" style={styles.title}>
-        Saved Walls
-      </Text>
+  // Gyms with their walls, newest first; the most recently climbed gym on top.
+  const byId = new Map<string, Gym>();
+  for (const s of [...scans].sort((a, b) => b.createdAt.localeCompare(a.createdAt))) {
+    const gym = byId.get(s.placeId) ?? {
+      id: s.placeId,
+      name: places[s.placeId]?.name ?? s.placeName,
+      scans: [],
+    };
+    gym.scans.push(s);
+    byId.set(s.placeId, gym);
+  }
+  const gyms = [...byId.values()];
 
-      {places.length === 0 ? (
-        <MessageState
-          icon="bookmark"
-          title="No saved walls yet"
-          message="Scans you take are saved here, grouped by gym."
-        />
+  return (
+    <Screen padded={false} edges={['top', 'left', 'right']}>
+      <Contours color={c.accent} />
+
+      <View style={styles.header}>
+        <Text style={[styles.title, { fontFamily: Fonts.serif, color: c.text }]}>Saved walls</Text>
+        <Text variant="body" tone="secondary">
+          {gyms.length === 0
+            ? 'Walls you scan are kept here, grouped by gym.'
+            : `${scans.length} ${scans.length === 1 ? 'wall' : 'walls'} across ${gyms.length} ${
+                gyms.length === 1 ? 'gym' : 'gyms'
+              }.`}
+        </Text>
+      </View>
+
+      {gyms.length === 0 ? (
+        <View style={styles.empty}>
+          <Icon name="bookmark" size={40} color={c.textSecondary} />
+          <Text tone="secondary" style={styles.emptyText}>
+            No saved walls yet. Scan a wall and it shows up here.
+          </Text>
+        </View>
       ) : (
         <FlatList
-          data={places}
-          keyExtractor={(p) => p.id}
+          data={gyms}
+          keyExtractor={(g) => g.id}
           contentContainerStyle={styles.list}
-          renderItem={({ item }) => (
-            <PlaceRow id={item.id} name={item.name} count={item.count} />
-          )}
+          showsVerticalScrollIndicator={false}
+          renderItem={({ item }) => <GymCard gym={item} />}
         />
       )}
     </Screen>
   );
 }
 
-function PlaceRow({ id, name, count }: { id: string; name: string; count: number }) {
+function GymCard({ gym }: { gym: Gym }) {
   const c = useThemeColors();
+  const count = gym.scans.length;
+  const latest = new Date(gym.scans[0].createdAt).toLocaleDateString();
+  const shown = gym.scans.slice(0, THUMBS);
+  const more = count - shown.length;
+
   return (
-    <Card
-      onPress={() => router.push(`/place/${id}`)}
-      accessibilityLabel={`${name}, ${count} ${count === 1 ? 'scan' : 'scans'}`}
-      style={styles.row}
+    <Pressable
+      onPress={() => router.push(`/place/${gym.id}`)}
+      accessibilityRole="button"
+      accessibilityLabel={`${gym.name}, ${count} ${count === 1 ? 'wall' : 'walls'}`}
+      style={({ pressed }) => [
+        styles.card,
+        { backgroundColor: c.surface, borderColor: c.border, opacity: pressed ? 0.85 : 1 },
+      ]}
     >
-      <View style={styles.rowText}>
-        <Text variant="label">{name}</Text>
-        <Text variant="caption" tone="secondary">
-          {count} {count === 1 ? 'scan' : 'scans'}
-        </Text>
+      <View style={styles.thumbs}>
+        {shown.map((s, i) => (
+          <View key={s.scanId} style={styles.thumbWrap}>
+            <Image source={{ uri: s.imageUri }} style={styles.thumb} contentFit="cover" />
+            {more > 0 && i === shown.length - 1 ? (
+              <View style={styles.moreOverlay}>
+                <Text variant="label" color="#fff">
+                  +{more}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+        ))}
       </View>
-      <Icon name="chevron.right" size={16} color={c.textSecondary} />
-    </Card>
+
+      <View style={styles.cardRow}>
+        <View style={styles.cardText}>
+          <Text style={[styles.gymName, { fontFamily: Fonts.serif, color: c.text }]} numberOfLines={1}>
+            {gym.name}
+          </Text>
+          <Text variant="caption" tone="secondary">
+            {count} {count === 1 ? 'wall' : 'walls'} · latest {latest}
+          </Text>
+        </View>
+        <Icon name="chevron.right" size={16} color={c.textSecondary} />
+      </View>
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  title: { marginBottom: Spacing.lg },
-  list: { gap: Spacing.sm, paddingBottom: Spacing.xl },
-  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  rowText: { gap: 2 },
+  header: { paddingHorizontal: Spacing.lg, paddingTop: Spacing.lg, paddingBottom: Spacing.md, gap: 4 },
+  title: { fontSize: 30, fontWeight: '600' },
+  list: { paddingHorizontal: Spacing.lg, paddingBottom: Spacing.xl, gap: Spacing.md },
+  card: {
+    borderRadius: Radius.lg,
+    borderWidth: StyleSheet.hairlineWidth,
+    padding: Spacing.sm,
+    gap: Spacing.sm,
+  },
+  thumbs: { flexDirection: 'row', gap: Spacing.xs },
+  thumbWrap: { flex: 1, height: 96, borderRadius: Radius.md, overflow: 'hidden' },
+  thumb: { width: '100%', height: '100%' },
+  moreOverlay: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: 'rgba(26,24,21,0.55)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    paddingHorizontal: Spacing.xs,
+    paddingBottom: Spacing.xs,
+  },
+  cardText: { flex: 1, gap: 2 },
+  gymName: { fontSize: 19, fontWeight: '600' },
+  empty: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.xl,
+  },
+  emptyText: { textAlign: 'center' },
 });

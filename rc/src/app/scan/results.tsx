@@ -1,10 +1,21 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, View } from 'react-native';
 
 import { AppHeader } from '@/components/app-header';
 import { WallView } from '@/components/wall-view';
-import { Badge, Card, Icon, Loading, MessageState, Screen, Swatch, Text } from '@/components/ui';
+import {
+  Badge,
+  Button,
+  Card,
+  Icon,
+  Loading,
+  MessageState,
+  Screen,
+  Segmented,
+  Swatch,
+  Text,
+} from '@/components/ui';
 import { api, type Route } from '@/api';
 import { useAsyncData } from '@/lib/use-async-data';
 import { Radius, Spacing, useThemeColors } from '@/theme';
@@ -16,6 +27,53 @@ export default function ResultsScreen() {
     useCallback(() => api.getScan(scanId), [scanId]),
     [scanId],
   );
+  // Tapping a hold on the photo either picks it as a route's start or turns it off.
+  const [tapMode, setTapMode] = useState<'start' | 'off'>('start');
+  const [picking, setPicking] = useState(false);
+  const [pickError, setPickError] = useState<string | null>(null);
+  // Holds the climber tapped off on the photo; saved as delete corrections.
+  const [off, setOff] = useState<Set<string>>(new Set());
+  const [saving, setSaving] = useState(false);
+
+  const toggleHold = (id: string) =>
+    setOff((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  // Start hold → the backend suggests the rest of the route → review it on the pick screen.
+  const pickStart = async (holdId: string) => {
+    if (picking) return;
+    setPicking(true);
+    setPickError(null);
+    try {
+      const ids = await api.suggestRoute(scanId, holdId);
+      router.push({
+        pathname: '/scan/pick-route',
+        params: { scanId, placeName, start: holdId, holds: ids.join(',') },
+      });
+    } catch (e) {
+      setPickError(e instanceof Error ? e.message : 'Couldn’t suggest a route from that hold.');
+    } finally {
+      setPicking(false);
+    }
+  };
+
+  const saveOff = async () => {
+    setSaving(true);
+    try {
+      await api.submitCorrections(
+        scanId,
+        [...off].map((holdId) => ({ kind: 'delete' as const, holdId })),
+      );
+      setOff(new Set());
+      reload(); // routes are regrouped without the removed holds
+    } finally {
+      setSaving(false);
+    }
+  };
 
   if (error) {
     return (
@@ -65,14 +123,51 @@ export default function ResultsScreen() {
         />
       </View>
 
-      <WallView uri={scan.imageUri} holds={scan.holds} style={styles.wall} />
+      <WallView
+        uri={scan.imageUri}
+        holds={scan.holds}
+        offHoldIds={off}
+        onHoldPress={tapMode === 'start' ? pickStart : toggleHold}
+        style={styles.wall}
+      />
 
       <View style={[styles.sheet, { backgroundColor: c.surface, borderColor: c.border }]}>
-        {lowConfidence ? (
+        <Segmented
+          options={[
+            { label: 'Pick start', value: 'start' },
+            { label: 'Turn off holds', value: 'off' },
+          ]}
+          value={tapMode}
+          onChange={setTapMode}
+        />
+        <Text variant="caption" tone={pickError ? 'destructive' : 'secondary'} style={styles.hint}>
+          {pickError ??
+            (picking
+              ? 'Finding the route…'
+              : tapMode === 'start'
+                ? 'Tap a start hold on the photo to plan that route.'
+                : 'Tap holds on the photo that aren’t holds (people, volumes) to turn them off.')}
+        </Text>
+
+        {off.size > 0 ? (
+          <View style={styles.offBar}>
+            <Text variant="caption" tone="secondary" style={styles.flex}>
+              {off.size} {off.size === 1 ? 'hold' : 'holds'} turned off
+            </Text>
+            <Button
+              title="Undo"
+              variant="ghost"
+              fullWidth={false}
+              onPress={() => setOff(new Set())}
+              disabled={saving}
+            />
+            <Button title="Save" fullWidth={false} onPress={saveOff} loading={saving} />
+          </View>
+        ) : lowConfidence ? (
           <View style={styles.warning}>
             <Icon name="exclamationmark.triangle.fill" size={14} color={c.warning} />
             <Text variant="caption" tone="secondary" style={styles.flex}>
-              Some holds are low-confidence. Tap “Fix” to correct detection.
+              Some holds are low-confidence. Turn off wrong ones or tap “Fix”.
             </Text>
           </View>
         ) : null}
@@ -155,6 +250,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingTop: Spacing.md,
   },
+  hint: { marginTop: Spacing.sm, marginBottom: Spacing.sm },
+  offBar: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.sm },
   warning: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.sm },
   sheetTitle: { marginBottom: Spacing.sm },
   list: { gap: Spacing.sm, paddingBottom: Spacing.xl },

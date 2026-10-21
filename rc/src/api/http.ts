@@ -1,3 +1,4 @@
+import { File } from 'expo-file-system';
 import { Platform } from 'react-native';
 
 import { API_URL } from '@/config/api';
@@ -51,8 +52,9 @@ async function appendImage(form: FormData, field: string, image: ImageInput, i: 
   if (Platform.OS === 'web') {
     form.append(field, await (await fetch(image.uri)).blob(), name);
   } else {
-    // React Native's FormData accepts a { uri, name, type } file descriptor.
-    form.append(field, { uri: image.uri, name, type: 'image/jpeg' } as unknown as Blob);
+    // Expo's fetch (the global since SDK 57) rejects React Native's { uri, name, type }
+    // descriptor; it reads the file through expo-file-system's File instead.
+    form.append(field, new File(image.uri), name);
   }
 }
 

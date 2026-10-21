@@ -13,6 +13,8 @@ type Props = {
   holds: Hold[];
   /** When set, these holds are highlighted and others are dimmed. */
   selectedHoldIds?: Set<string>;
+  /** Holds the climber turned off: drawn as a faint dashed outline. */
+  offHoldIds?: Set<string>;
   /** Numbered hand/foot markers (path view). */
   steps?: PathStep[];
   onHoldPress?: (holdId: string) => void;
@@ -36,7 +38,15 @@ function toPoints(poly: Point[], w: number, h: number): string {
  * level: the image and the SVG live in a single transformed container, so one
  * pinch/pan transform moves both together (design doc M3).
  */
-export function WallView({ uri, holds, selectedHoldIds, steps, onHoldPress, style }: Props) {
+export function WallView({
+  uri,
+  holds,
+  selectedHoldIds,
+  offHoldIds,
+  steps,
+  onHoldPress,
+  style,
+}: Props) {
   const [box, setBox] = useState({ w: 0, h: 0 });
   const [aspect, setAspect] = useState(0.75); // w/h, updated on image load
 
@@ -124,6 +134,21 @@ export function WallView({ uri, holds, selectedHoldIds, steps, onHoldPress, styl
                   const selected = !dimming || selectedHoldIds!.has(h.id);
                   const color = routeHex(h.color);
                   const pts = toPoints(h.polygon, dispW, dispH);
+                  if (offHoldIds?.has(h.id)) {
+                    return (
+                      <Polygon
+                        key={h.id}
+                        points={pts}
+                        fill="#000000"
+                        fillOpacity={0.01} // nearly invisible, but still tappable to turn back on
+                        stroke="#FFFFFF"
+                        strokeOpacity={0.6}
+                        strokeWidth={1.5}
+                        strokeDasharray="4 4"
+                        onPress={onHoldPress ? () => onHoldPress(h.id) : undefined}
+                      />
+                    );
+                  }
                   return (
                     <Polygon
                       key={h.id}
@@ -140,7 +165,7 @@ export function WallView({ uri, holds, selectedHoldIds, steps, onHoldPress, styl
                 {/* Color stroke on top of the white halo for selected holds. */}
                 {holds.map((h) => {
                   const selected = !dimming || selectedHoldIds!.has(h.id);
-                  if (!selected) return null;
+                  if (!selected || offHoldIds?.has(h.id)) return null;
                   return (
                     <Polygon
                       key={`${h.id}-c`}
