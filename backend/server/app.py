@@ -32,6 +32,8 @@ from pydantic import BaseModel
 BACKEND = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BACKEND)
 
+from pipeline import google_places  # noqa: E402
+from pipeline.env import load_env  # noqa: E402
 from pipeline.places import Place, PlaceRegistry, haversine_m  # noqa: E402
 from pipeline.quality import check_image_quality  # noqa: E402
 from pipeline.scan import analyze_scan, group_routes, plan_options, plan_route, process_image, suggest_route  # noqa: E402
@@ -90,6 +92,7 @@ def _save_places() -> None:
 
 
 def _load() -> None:
+    load_env()  # GOOGLE_MAPS_API_KEY for the gym finder (optional)
     os.makedirs(SCANS_DIR, exist_ok=True)
     if os.path.exists(PLACES_FILE):
         data = json.load(open(PLACES_FILE))
@@ -263,6 +266,7 @@ async def create_scan(
     metas: str = Form("[]"),
     mode: str = Form("quick"),
 ) -> dict:
+    placeId = _resolve_place_id(placeId)  # a gym picked from Google joins the registry here
     scan_id = f"scan-{datetime.now():%Y%m%d-%H%M%S}-{uuid.uuid4().hex[:6]}"
     os.makedirs(_scan_dir(scan_id))
     for i, img in enumerate(images):
@@ -441,14 +445,68 @@ def create_route(scan_id: str, body: RouteBody) -> dict:
     return route
 
 
+def _known(g: dict) -> Place | None:
+    """The registry gym a Google result refers to (same place id, or dedup match)."""
+    for p in registry.places:
+        if p.google_place_id == g["place_id"]:
+            return p
+    return registry._match(g["name"], g["lat"], g["lng"])
+
+
+def _google_out(g: dict, lat: float | None, lng: float | None) -> dict:
+    """A Google result as an app Place: a known gym keeps its registry id; a new one gets
+    'g:<place id>' and is added to the registry only when a scan uses it."""
+    p = _known(g)
+    out = _place_out(p, lat, lng) if p else {"id": f"g:{g['place_id']}", "name": g["name"], "scanCount": 0}
+    if "distanceM" not in out and g.get("distance_m") is not None:
+        out["distanceM"] = round(g["distance_m"])
+    if g.get("address"):
+        out["address"] = g["address"]
+    if g.get("suggested"):
+        out["suggested"] = True
+    return out
+
+
+def _resolve_place_id(place_id: str) -> str:
+    """'g:<google id>' → a registry id (adding the gym on first use); others unchanged."""
+    if not place_id.startswith("g:"):
+        return place_id
+    gid = place_id[2:]
+    with _lock:
+        for p in registry.places:
+            if p.google_place_id == gid:
+                return p.id
+        g = google_places.details(gid)
+        if not g:
+            raise HTTPException(404, "Gym not found")
+        p = registry.create_place(g["name"], g["lat"], g["lng"])
+        p.google_place_id = gid
+        _save_places()
+        return p.id
+
+
+def _merge(first: list[dict], rest: list[dict], limit: int = 20) -> list[dict]:
+    seen, out = set(), []
+    for x in first + rest:
+        if x["id"] not in seen:
+            seen.add(x["id"])
+            out.append(x)
+    return out[:limit]
+
+
 @app.get("/places/nearby")
 def nearby(lat: float, lng: float) -> list[dict]:
-    return [_place_out(p, lat, lng) for p in registry.get_nearby(lat, lng)]
+    """Google climbing gyms near the climber (suggested one first) + gyms in the registry."""
+    google = [_google_out(g, lat, lng) for g in google_places.nearby_gyms(lat, lng)]
+    google.sort(key=lambda x: not x.get("suggested"))
+    return _merge(google, [_place_out(p, lat, lng) for p in registry.get_nearby(lat, lng)])
 
 
 @app.get("/places/search")
-def search(q: str) -> list[dict]:
-    return [_place_out(p) for p in registry.search(q)]
+def search(q: str, lat: float | None = None, lng: float | None = None) -> list[dict]:
+    local = [_place_out(p, lat, lng) for p in registry.search(q)]
+    google = [_google_out(g, lat, lng) for g in google_places.search_gyms(q, lat, lng)[:6]]
+    return _merge(local, google)
 
 
 @app.post("/places")
@@ -461,6 +519,11 @@ def create_place(body: PlaceBody) -> dict:
 
 @app.get("/places/{place_id}/scans")
 def place_scans(place_id: str, request: Request) -> list[dict]:
+    if place_id.startswith("g:"):
+        known = [p.id for p in registry.places if p.google_place_id == place_id[2:]]
+        if not known:
+            return []
+        place_id = known[0]
     found = [s for s in scans.values() if s["placeId"] == place_id]
     found.sort(key=lambda s: s["createdAt"], reverse=True)
     return [_public(s, request) for s in found]

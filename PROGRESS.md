@@ -748,4 +748,24 @@ Upload `run_dust3r.py` + a zip of same-wall views, run on a GPU, get the fold an
   picks will decide. Reach-test pairs are excluded from fitting (paths with different
   endpoints have incomparable total costs). Options per route/climber on 3 photos:
   1 option 17×, 2 options 34×, 3 options 1×.
+- **2026-10-21 (Google Maps gym finder — IMPROVEMENT_PLAN Phase 6)** —
+  `pipeline/google_places.py`: Places API (New) Text Search for "climbing gym" biased
+  to the phone's location (minimal field mask: id, name, location, types, address;
+  1-day in-memory cache). Google has no climbing place type, so a gym is "likely" when
+  its name has a climbing word (climb, boulder, cliff, wall, rock, …) or it's in
+  Google's top 3 for the query; the closest likely gym within 200 m is `suggested`
+  (climbing-named preferred). `/places/nearby` and `/places/search` merge Google
+  results with the registry: known gyms keep their registry id (dedup by Google id or
+  name/coords), new ones come back as `g:<place id>` and are added to the registry only
+  when a scan uses them (`google_place_id` stored). App: "You're at X? — Yes, use this
+  gym" card on the gym picker, addresses on rows, search biased to the phone's location.
+  Key: `GOOGLE_MAPS_API_KEY` in `.env` (server-side only); without it everything works
+  as before. Verified with stubbed responses, then **against the live Places API**:
+  standing at Mission Cliffs, Dogpatch Boulders and Mosaic Boulders (exact and 100 m
+  off) each was suggested; at a non-climbing "Roots Movement" nothing was. Typed
+  searches get "climbing gym" appended unless they already say climb/gym ("mosaic"
+  alone returned a stairway and apartments; "boulder" a city). Web app with a simulated
+  location at Mosaic: "You're at Mosaic Boulders?" card → scan → gym registered with its
+  Google id, next visit shows it with its scan count. Check Google's caching terms
+  before launch.
 - **(earlier)** — Built and verified Phase 1 M0–M6.

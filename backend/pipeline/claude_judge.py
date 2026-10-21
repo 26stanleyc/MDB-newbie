@@ -16,6 +16,8 @@ import os
 import cv2
 import numpy as np
 
+from .env import load_env  # noqa: F401  (re-exported for scripts)
+
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 MODEL = "claude-opus-5-5"
 PANEL_MAX = 720  # px, long side of each path panel
@@ -45,18 +47,6 @@ SCHEMA = {
     "required": ["choice", "confidence", "reason"],
     "additionalProperties": False,
 }
-
-
-def load_env(path: str = os.path.join(ROOT, ".env")) -> None:
-    """Set variables from a KEY=value .env file unless already in the environment."""
-    if not os.path.exists(path):
-        return
-    for line in open(path):
-        line = line.strip()
-        if line and not line.startswith("#") and "=" in line:
-            key, value = line.split("=", 1)
-            if value.strip():
-                os.environ.setdefault(key.strip(), value.strip())
 
 
 def _draw_path(img: np.ndarray, route_polys: list[np.ndarray], centers: dict, steps: list[dict],

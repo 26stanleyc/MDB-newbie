@@ -61,6 +61,7 @@ class Place:
     lat: float | None = None
     lng: float | None = None
     scan_count: int = 0
+    google_place_id: str | None = None  # set when the gym came from Google Places
 
 
 @dataclass

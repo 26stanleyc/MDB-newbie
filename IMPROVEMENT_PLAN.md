@@ -113,6 +113,9 @@ rate acceptable. Target: 70% acceptable.
 
 ## Phase 6 — Gym identification with Google Maps
 
+✅ *Built 2026-10-21* (`backend/pipeline/google_places.py`, gym picker "You're at X?" card) — needs `GOOGLE_MAPS_API_KEY` in `.env`; not yet tested against the live API.
+
+
 Replace manual gym search with automatic lookup from the photo's GPS.
 
 1. **Backend proxy** (key never ships in the app): on capture, the app sends lat/lng →
