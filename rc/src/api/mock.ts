@@ -263,7 +263,7 @@ export const mockApi: CapitanApi = {
     return clone(allPlaces());
   },
 
-  async searchPlaces(query: string): Promise<Place[]> {
+  async searchPlaces(query: string, _lat?: number, _lng?: number): Promise<Place[]> {
     await delay(400 + Math.random() * 600);
     const q = query.trim().toLowerCase();
     if (!q) return [];

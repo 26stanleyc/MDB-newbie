@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { FlatList, StyleSheet, View } from 'react-native';
 
 import { AppHeader } from '@/components/app-header';
-import { Card, Icon, Loading, Screen, Text, TextField } from '@/components/ui';
+import { Button, Card, Icon, Loading, Screen, Text, TextField } from '@/components/ui';
 import { api, type Place } from '@/api';
 import { Spacing, useThemeColors } from '@/theme';
 
@@ -54,7 +54,7 @@ export default function PlacePickerScreen() {
       }
       setSearching(true);
       try {
-        setResults(await api.searchPlaces(q));
+        setResults(await api.searchPlaces(q, coords?.lat, coords?.lng));
       } catch {
         setResults([]);
       } finally {
@@ -62,7 +62,7 @@ export default function PlacePickerScreen() {
       }
     }, 250);
     return () => clearTimeout(t);
-  }, [query]);
+  }, [query, coords]);
 
   const choose = (place: Place) => {
     router.push({
@@ -84,7 +84,9 @@ export default function PlacePickerScreen() {
   };
 
   const q = query.trim();
-  const list = q ? results : (nearby ?? []);
+  // The gym the climber is probably in (Google Places, server-side) gets its own card.
+  const suggested = !q ? nearby?.find((p) => p.suggested) : undefined;
+  const list = q ? results : (nearby ?? []).filter((p) => p !== suggested);
   const loading = q ? searching : nearby === null;
   const showAddNew = q.length > 0 && !searching;
 
@@ -128,9 +130,9 @@ export default function PlacePickerScreen() {
               <Card onPress={() => choose(item)} accessibilityLabel={item.name} style={styles.row}>
                 <View style={styles.flex}>
                   <Text variant="label">{item.name}</Text>
-                  {dist ? (
-                    <Text variant="caption" tone="secondary">
-                      {dist} away
+                  {dist || item.address ? (
+                    <Text variant="caption" tone="secondary" numberOfLines={1}>
+                      {[dist ? `${dist} away` : null, item.address].filter(Boolean).join(' · ')}
                     </Text>
                   ) : null}
                 </View>
@@ -138,6 +140,24 @@ export default function PlacePickerScreen() {
               </Card>
             );
           }}
+          ListHeaderComponent={
+            suggested ? (
+              <Card accessibilityLabel={`You're at ${suggested.name}?`} style={styles.suggested}>
+                <View style={styles.row}>
+                  <Icon name="location.fill" size={18} color={c.accent} />
+                  <View style={styles.flex}>
+                    <Text variant="label">You’re at {suggested.name}?</Text>
+                    {suggested.address ? (
+                      <Text variant="caption" tone="secondary" numberOfLines={1}>
+                        {suggested.address}
+                      </Text>
+                    ) : null}
+                  </View>
+                </View>
+                <Button title="Yes, use this gym" onPress={() => choose(suggested)} />
+              </Card>
+            ) : null
+          }
           ListFooterComponent={
             showAddNew ? (
               <Card onPress={addNew} accessibilityLabel={`Add ${q} as a new place`} style={styles.row}>
@@ -167,5 +187,6 @@ const styles = StyleSheet.create({
   sectionLabel: { marginTop: Spacing.md },
   list: { gap: Spacing.sm, paddingVertical: Spacing.sm, paddingBottom: Spacing.xl },
   row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  suggested: { gap: Spacing.md, marginBottom: Spacing.sm },
   emptyText: { textAlign: 'center', marginTop: Spacing.xl },
 });

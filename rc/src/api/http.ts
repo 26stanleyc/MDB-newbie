@@ -116,8 +116,11 @@ export const httpApi: CapitanApi = {
   getNearbyPlaces: (lat: number, lng: number): Promise<Place[]> =>
     request(`/places/nearby?lat=${lat}&lng=${lng}`),
 
-  searchPlaces: (query: string): Promise<Place[]> =>
-    request(`/places/search?q=${encodeURIComponent(query)}`),
+  searchPlaces: (query: string, lat?: number, lng?: number): Promise<Place[]> =>
+    request(
+      `/places/search?q=${encodeURIComponent(query)}` +
+        (lat != null && lng != null ? `&lat=${lat}&lng=${lng}` : ''),
+    ),
 
   createPlace: (name: string, lat?: number, lng?: number): Promise<Place> =>
     request('/places', json({ name, lat, lng })),

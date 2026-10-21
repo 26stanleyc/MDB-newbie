@@ -45,6 +45,8 @@ export type Place = {
   name: string;
   distanceM?: number;
   scanCount: number;
+  address?: string; // from Google Places, when the gym came from there
+  suggested?: boolean; // the gym the climber is probably standing in (nearby list only)
 };
 
 export type Scan = {
@@ -167,7 +169,8 @@ export interface CapitanApi {
   ): Promise<PathStep[]>;
   // backend matches + dedupes
   getNearbyPlaces(lat: number, lng: number): Promise<Place[]>;
-  searchPlaces(query: string): Promise<Place[]>;
+  // lat/lng (optional) bias the gym search toward the climber.
+  searchPlaces(query: string, lat?: number, lng?: number): Promise<Place[]>;
   createPlace(name: string, lat?: number, lng?: number): Promise<Place>;
   listScansByPlace(placeId: string): Promise<Scan[]>;
 
