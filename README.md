@@ -4,7 +4,7 @@ MDB newbie solo project. Capitan is an iPhone app for climbing gyms: photograph 
 wall, and it detects the holds, groups them into routes by color, and plans a
 hand/foot sequence up the route you pick, personalized to your height and wingspan.
 
-- **`rc/`** — the Expo / React Native app (separate git repo). Runs against a mock API.
+- **`rc/`** — the Expo / React Native app. Talks to the backend over HTTP (or an in-app mock).
 - **`backend/`** — the Python ML pipeline: quality check, hold detection, route
   colors, per-hold depth + graspability, wall geometry, beta planner. See
   [`backend/README.md`](backend/README.md).

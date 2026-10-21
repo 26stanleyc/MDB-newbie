@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Capitan** — climbing-gym app: photograph a wall → detect holds → group them into routes by color → per-hold depth/graspability → wall geometry → personalized, balance-aware hand/foot beta. Two halves:
 
-- **`rc/`** — Expo / React Native iOS app (Phase 1, built against a mock API). It is a **separate nested git repo** with its own `rc/CLAUDE.md` + `rc/AGENTS.md` — follow those when working there. Note: `rc/CLAUDE.md` still says "do not begin Phase 2"; that gate was crossed on 2026-10-04 at Stanley's instruction.
+- **`rc/`** — Expo / React Native iOS app (Phase 1, built against a mock API). Part of this repo since 2026-10-21 (its earlier history was merged in under `rc/`); it has its own `rc/CLAUDE.md` + `rc/AGENTS.md` — follow those when working there.
 - **`backend/`** — Python ML pipeline (Phase 2), milestones M7–M12. Lives in this parent repo next to the data and models.
 
 **Read `PROGRESS.md` before backend work.** It is the running log of every milestone: what was built, validation numbers, decisions, and a "What was tried that didn't work" section. Append to it (status table + milestone section + changelog) when finishing meaningful work. **`IMPROVEMENT_PLAN.md`** is the roadmap (phases, targets, data sources, keys needed). Design authority is `rc/Capitan — Design Document v2.md` (Draft v4).
