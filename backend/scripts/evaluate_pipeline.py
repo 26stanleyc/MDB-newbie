@@ -54,6 +54,7 @@ from pipeline.splits import all_gyms, split_of  # noqa: E402
 DATA = os.path.join(ROOT, "data")
 EVAL = os.path.join(BACKEND, "eval")
 CLIMBERS = [(155, 155), (170, 172), (185, 190)]  # (height, wingspan) cm
+PLANNER_W = None  # set in main(): the app's planner weights, or the hand-set ones
 SMALL_AREA = 32 * 32  # px at working resolution (COCO "small")
 
 
@@ -163,11 +164,11 @@ def plan_metrics(route_ids: list[str], geom: dict, image_size: list[int]) -> dic
     top = max(holds, key=lambda h: h.pos[1]).id
     out = {"reached_top": [], "moves": [], "stability": [], "feet_per_hand": []}
     for height, span in CLIMBERS:
-        steps, stab = plan_beta(holds, height, span)
+        steps, stab = plan_beta(holds, height, span, weights=PLANNER_W)
         hands = [s for s in steps if s.limb in ("LH", "RH")]
         feet = [s for s in steps if s.limb in ("LF", "RF")]
         out["reached_top"].append(hands[-1].hold_id == top)
-        out["moves"].append(len(hands) - 1)  # first two hand steps share the start hold
+        out["moves"].append(len(hands) - 2)  # both hands start on one hold: 2 steps, 0 moves
         out["stability"].append(float(np.mean(stab)))
         out["feet_per_hand"].append(len(feet) / max(1, len(hands)))
     return out
@@ -200,10 +201,16 @@ def main() -> int:
     ap.add_argument("--out", default=None, help="metrics JSON (default backend/eval/metrics_<split>.json)")
     ap.add_argument("--label", default="", help="free-text name for this run")
     ap.add_argument("--palette-colors", action="store_true", help="old palette color rule (baseline)")
+    ap.add_argument("--hand-set-weights", action="store_true",
+                    help="planner with the hand-set weights instead of eval/planner_weights.json")
     ap.add_argument("--no-hold-labels", action="store_true",
                     help="color references from route labels only (before hold_colors.json)")
     args = ap.parse_args()
 
+    global PLANNER_W
+    import pipeline.scan as scan_mod
+    from pipeline.beta import DEFAULT_WEIGHTS
+    PLANNER_W = DEFAULT_WEIGHTS if args.hand_set_weights else scan_mod.PLANNER_WEIGHTS
     colors_gt = json.load(open(os.path.join(EVAL, "route_colors.json")))
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
     model = build_model()

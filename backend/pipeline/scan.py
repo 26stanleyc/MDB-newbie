@@ -14,7 +14,7 @@ import cv2
 import numpy as np
 import torch
 
-from .beta import Hold as BetaHold, plan_beta
+from .beta import Hold as BetaHold, load_weights, plan_beta
 from .holds import EVAL_MAX_SIDE, build_model
 from .routes import ColorNamer, classify_and_group, hold_color_lab, hold_lab, linear_exposure
 
@@ -29,6 +29,8 @@ FALLBACK_WALL_M = 4.5      # image height if there are too few holds to anchor o
 ROUTE_LINK_M = 1.2         # same-color holds farther apart than a tall climber's move are separate routes
 TAP_MAX_DROP_M = 0.6       # tap-to-pick: footholds may sit this far below the start hold
 TAP_MAX_SIDE_M = 1.25      # tap-to-pick: route stays within this lateral distance of the start hold
+
+PLANNER_WEIGHTS = load_weights()  # learned from Claude's preferences when available
 
 _model = None
 _device = None
@@ -290,5 +292,5 @@ def plan_route(route: dict, geom: dict, image_size: list[int], height_cm: float,
         return []
     if len(holds) == 1:
         return [{"order": 1, "holdId": holds[0].id, "limb": "RH"}, {"order": 2, "holdId": holds[0].id, "limb": "LH"}]
-    steps, _ = plan_beta(holds, height_cm, wingspan_cm)
+    steps, _ = plan_beta(holds, height_cm, wingspan_cm, weights=PLANNER_WEIGHTS)
     return [{"order": s.order, "holdId": s.hold_id, "limb": s.limb} for s in steps]

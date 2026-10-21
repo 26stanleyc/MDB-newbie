@@ -52,12 +52,13 @@
     "reached_top": 0.617,
     "taller_never_more_moves": 0.8,
     "mean_moves_by_height": {
-      "155": 3.3,
-      "170": 3.45,
-      "185": 3.15
+      "155": 2.3,
+      "170": 2.45,
+      "185": 2.15
     },
     "mean_stability": 0.61,
-    "feet_per_hand_move": 0.425
+    "feet_per_hand_move": 0.425,
+    "note": "mean_moves_by_height corrected 2026-10-21 (-1): the original count included the second start hand."
   },
   "end_to_end": {
     "routes": 24,

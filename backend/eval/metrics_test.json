@@ -1,6 +1,6 @@
 {
   "run": "v2 detector + knn colors (route + mosaic hold labels) + route split + planner v2 + tap-to-pick",
-  "date": "2026-10-20T21:05:12",
+  "date": "2026-10-20T21:17:03",
   "ckpt": "backend/artifacts/m9_train_split.pt",
   "split": "test",
   "images": 8,
@@ -58,9 +58,9 @@
     "reached_top": 0.733,
     "taller_never_more_moves": 0.9,
     "mean_moves_by_height": {
-      "155": 2.75,
-      "170": 2.45,
-      "185": 2.25
+      "155": 1.75,
+      "170": 1.45,
+      "185": 1.25
     },
     "mean_stability": 0.818,
     "feet_per_hand_move": 0.806
@@ -78,9 +78,9 @@
       "reached_top": 0.867,
       "taller_never_more_moves": 0.8,
       "mean_moves_by_height": {
-        "155": 2.8,
-        "170": 2.4,
-        "185": 2.6
+        "155": 1.8,
+        "170": 1.4,
+        "185": 1.6
       },
       "mean_stability": 0.913,
       "feet_per_hand_move": 1.0

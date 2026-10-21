@@ -30,6 +30,9 @@ class Hold:
     grasp: float = 0.6     # 0..1 graspability (how good to pull on)
 
 
+HAND_REACH_FRAC = 0.62  # max hand move as a fraction of wingspan (unvalidated)
+
+
 @dataclass
 class Reach:
     """Reach limits derived from body measurements (meters)."""
@@ -38,12 +41,13 @@ class Reach:
     foot_spread: float     # max lateral offset of a foot from the hand column
 
     @classmethod
-    def from_body(cls, height_cm: float, wingspan_cm: float):
+    def from_body(cls, height_cm: float, wingspan_cm: float, hand_frac: float | None = None):
         w = wingspan_cm / 100.0
         h = height_cm / 100.0
         # A hand move is limited by arm span from a braced stance — a fraction of the
         # full wingspan (you don't fully span between consecutive grips every move).
-        return cls(hand_move=0.62 * w, foot_from_hand=0.55 * h, foot_spread=0.45 * w)
+        frac = HAND_REACH_FRAC if hand_frac is None else hand_frac
+        return cls(hand_move=frac * w, foot_from_hand=0.55 * h, foot_spread=0.45 * w)
 
 
 @dataclass
@@ -53,21 +57,52 @@ class Step:
     limb: Limb
 
 
-MOVE_COST = 0.6       # fixed effort per hand move
 MAX_DROP = 0.4        # m a hand may move down (traverses)
 
+# A hand move's cost is WEIGHTS · move_features(...). The features, in order:
+#   move     1 per move — effort, so longer reach → fewer moves (personalization)
+#   dist     distance moved (m)
+#   strain   distance / reach (0..1 within reach)
+#   bad_hold 1 - graspability of the target hold
+#   down     1 if the move goes down (traverse)
+#   lateral  sideways distance / reach — big sideways jumps risk barn-dooring
+FEATURES = ("move", "dist", "strain", "bad_hold", "down", "lateral")
+DEFAULT_WEIGHTS = np.array([0.6, 1.0, 0.5, 0.8, 0.6, 0.4])
 
-def _cost(a: Hold, b: Hold, reach: Reach) -> float:
+
+def load_weights(path: str | None = None) -> np.ndarray:
+    """Learned weights (backend/eval/planner_weights.json, from scripts/judge_paths.py fit
+    --save) if present, else the hand-set DEFAULT_WEIGHTS."""
+    import json
+    import os
+    path = path or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                "eval", "planner_weights.json")
+    if os.path.exists(path):
+        data = json.load(open(path))
+        if data.get("features") == list(FEATURES):
+            return np.array(data["weights"], float)
+    return DEFAULT_WEIGHTS
+
+
+def move_features(a: Hold, b: Hold, reach: Reach) -> np.ndarray:
     d = float(np.linalg.norm(b.pos - a.pos))          # 3D distance (works for 2D too)
     up = b.pos[1] - a.pos[1]
     lateral = abs(b.pos[0] - a.pos[0])
-    # prefer: shorter moves, upward progress, good holds, staying in reach, and small
-    # lateral jumps (big sideways moves risk barn-dooring = balance-aware search).
-    strain = d / max(reach.hand_move, 1e-6)           # 0..1 within reach
-    # MOVE_COST: every move is effort, so longer reach → fewer moves (personalization).
-    return (MOVE_COST + d + 0.5 * strain + 0.8 * (1.0 - b.grasp)
-            + (0.6 if up < 0 else 0.0)
-            + 0.4 * lateral / max(reach.hand_move, 1e-6))
+    r = max(reach.hand_move, 1e-6)
+    return np.array([1.0, d, d / r, 1.0 - b.grasp, 1.0 if up < 0 else 0.0, lateral / r])
+
+
+def path_features(hand_path: list[str], holds: list[Hold], reach: Reach) -> np.ndarray:
+    """Summed move features of a hand sequence (for comparing / learning weights)."""
+    by_id = {h.id: h for h in holds}
+    f = np.zeros(len(FEATURES))
+    for a, b in zip(hand_path, hand_path[1:]):
+        f += move_features(by_id[a], by_id[b], reach)
+    return f
+
+
+def _cost(a: Hold, b: Hold, reach: Reach, weights: np.ndarray = DEFAULT_WEIGHTS) -> float:
+    return float(weights @ move_features(a, b, reach))
 
 
 # --- Balance model (barn-door): COM must sit within the lateral span of contacts ---
@@ -100,7 +135,8 @@ def stance_stability(stance: dict[Limb, np.ndarray]) -> float:
 
 
 def plan_hand_path(holds: list[Hold], reach: Reach,
-                   start_id: str | None = None, finish_id: str | None = None) -> list[str]:
+                   start_id: str | None = None, finish_id: str | None = None,
+                   weights: np.ndarray = DEFAULT_WEIGHTS) -> list[str]:
     """Lowest-cost sequence of handholds from a start hold to the finish (highest).
 
     Start: given, or any hold the climber can grab while standing on the lowest hold
@@ -124,7 +160,7 @@ def plan_hand_path(holds: list[Hold], reach: Reach,
                 continue
             d = float(np.linalg.norm(b.pos - a.pos))
             if d <= reach.hand_move and (b.pos[1] - a.pos[1]) >= -MAX_DROP:
-                adj[a.id].append((_cost(a, b, reach), b.id))
+                adj[a.id].append((_cost(a, b, reach, weights), b.id))
 
     # Dijkstra from every start hold at once
     dist = {h.id: float("inf") for h in holds}
@@ -180,15 +216,16 @@ def _best_foot(hand_id, holds, reach, stance, foot_limb) -> str | None:
 
 
 def plan_beta(holds: list[Hold], height_cm: float, wingspan_cm: float,
-              start_id: str | None = None, finish_id: str | None = None):
+              start_id: str | None = None, finish_id: str | None = None,
+              weights: np.ndarray = DEFAULT_WEIGHTS, hand_frac: float | None = None):
     """Full personalized beta with a balance model.
 
     Returns (steps, stabilities) where stabilities[k] is the stance stability (0..1)
     after move k's hand placement + its foot adjustment.
     """
-    reach = Reach.from_body(height_cm, wingspan_cm)
+    reach = Reach.from_body(height_cm, wingspan_cm, hand_frac)
     by_id = {h.id: h for h in holds}
-    hand_path = plan_hand_path(holds, reach, start_id, finish_id)
+    hand_path = plan_hand_path(holds, reach, start_id, finish_id, weights)
     pos = lambda hid: by_id[hid].pos
 
     steps: list[Step] = []

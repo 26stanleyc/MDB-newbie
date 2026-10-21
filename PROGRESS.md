@@ -698,4 +698,35 @@ Upload `run_dust3r.py` + a zip of same-wall views, run on a GPU, get the fold an
   screen `scan/pick-route.tsx` (entry "Tap to pick" on results). Test split: one-tap route
   IoU 0.388, 42% ≥ 0.5 — a starting point the climber edits, not a big accuracy gain.
   Verified in the web app: tap start → 7-hold suggestion → remove → save → path.
+- **2026-10-21 (Claude as beta judge — experiment)** — Planner cost is now explicit
+  features × weights (`beta.FEATURES`: move, dist, strain, bad_hold, down, lateral;
+  hand-set `DEFAULT_WEIGHTS` unchanged, results identical). `pipeline/claude_judge.py`
+  renders two candidate betas side by side and asks Claude Opus 5.5 (structured JSON,
+  server-side fallbacks) which one a climber of that size would use;
+  `scripts/judge_paths.py` makes candidates by perturbing the weights on labeled routes,
+  logs every judgment to `backend/eval/claude_judgments.jsonl`, and fits weights by
+  Bradley-Terry (λ by 5-fold CV over routes). Results (250 judgments, ~$5):
+  - **Claude is consistent:** same path in both A/B orders on 88% / 79% / 85% of pairs
+    (consistency / train / test runs); no position bias (A picked 48%); no refusals.
+  - **Clear preference:** when paths differ in move count, Claude picks the one with
+    **more, shorter moves 79%** of the time (42 pairs) — the planner's moves are too long.
+  - **Learned weights don't beat hand-set on held-out pairs:** test agreement 0.725 vs
+    0.725 (40 judgments); CV 0.66. Six path-total features can't express what Claude
+    judges (body position, hold types). **Weights not saved** — the planner keeps the
+    hand-set ones (`planner_weights.json` would switch it automatically).
+  **Reach test (held-out test routes, 108 calls, ~$1.80):** current hand reach 0.62 ×
+  wingspan vs 0.55 and 0.45 (`judge_paths.py reach`, `beta.HAND_REACH_FRAC`), judged where
+  the paths differ:
+
+  | Reach | Paths differ | Claude prefers shorter | Consistent pairs (shorter / current) | Reaches top (current → shorter) |
+  |---|---|---|---|---|
+  | 0.55 | 19 / 57 | 58% of votes | 10 / 7 (sign test p = 0.63) | 0.77 → 0.70 |
+  | 0.45 | 35 / 57 | 39% of votes | 10 / 18 (p = 0.19) | 0.77 → 0.53 |
+
+  Neither is a significant win; 0.45 trends worse and strands climbers short of the top.
+  **Kept 0.62.** Shorter reach doesn't produce the "more, shorter moves" Claude favors — it
+  just cuts paths off (moves at 0.45: 1.30 vs 1.56). That preference points at the cost
+  side (per-move cost), which the weight fit also pushed toward, but without a held-out
+  gain. Remaining levers: richer features (hold types, stance balance), Claude reranking
+  at request time, and real human beta to validate any of it. Total judge spend: ~$6.80.
 - **(earlier)** — Built and verified Phase 1 M0–M6.

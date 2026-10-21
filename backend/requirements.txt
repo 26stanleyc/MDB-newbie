@@ -17,6 +17,8 @@ trimesh
 fastapi
 uvicorn
 python-multipart
+# Claude judge for planner weights (scripts/judge_paths.py)
+anthropic
 # Dataset download (data.py)
 kagglehub
 # Not installed locally — run on Colab: depth_anything_3 (backend/colab), dust3r (backend/multiview)
