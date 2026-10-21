@@ -9,6 +9,7 @@ import type { Vec3 } from '@/api';
 import { Button, Icon, MessageState, Screen, Text } from '@/components/ui';
 import { parseFocal, toGravity } from '@/lib/capture-meta';
 import { prepareImage } from '@/lib/image';
+import { pickWallPhotos } from '@/lib/pick-photos';
 import { useScanDraft } from '@/store/use-scan-draft';
 import { Radius, Spacing } from '@/theme';
 
@@ -49,9 +50,33 @@ export default function CameraScreen() {
         const g = toGravity(d);
         if (g) gravityRef.current = g;
       });
-    })();
+    })().catch(() => {}); // web reports motion as available but can't subscribe; gravity is optional
     return () => sub?.remove();
   }, []);
+
+  // Upload existing photos instead of shooting. Quick: one photo → preview.
+  // Precise: fill the remaining views; stay here unless there's no camera.
+  const upload = async (noCamera = false) => {
+    const limit = precise ? PRECISE_MAX - count : 1;
+    if (capturing || limit <= 0) return;
+    setCapturing(true);
+    try {
+      const picked = await pickWallPhotos(limit);
+      if (picked.length === 0) return;
+      picked.forEach(addCapture);
+      if (!precise) {
+        const img = picked[0].image;
+        router.push({
+          pathname: '/scan/preview',
+          params: { uri: img.uri, width: String(img.width), height: String(img.height) },
+        });
+      } else if (noCamera && count + picked.length >= PRECISE_MIN) {
+        router.push('/scan/preview');
+      }
+    } finally {
+      setCapturing(false);
+    }
+  };
 
   if (!permission) return <Screen />; // permissions still loading
 
@@ -61,9 +86,15 @@ export default function CameraScreen() {
         <MessageState
           icon="camera"
           title="Camera access needed"
-          message="Capitan needs the camera to photograph the wall."
+          message="Capitan needs the camera to photograph the wall — or upload a photo you already have."
           actionLabel="Grant access"
           onAction={requestPermission}
+        />
+        <Button
+          title={precise ? `Upload ${PRECISE_MIN}–${PRECISE_MAX} photos` : 'Upload a photo'}
+          variant="secondary"
+          onPress={() => upload(true)}
+          loading={capturing}
         />
         <Button title="Cancel" variant="ghost" onPress={() => router.back()} />
       </Screen>
@@ -154,7 +185,18 @@ export default function CameraScreen() {
             </View>
           ) : null}
           <View style={styles.shutterRow}>
-            <View style={styles.sideSlot} />
+            <View style={styles.sideSlot}>
+              <Pressable
+                onPress={() => upload()}
+                disabled={capturing || atMax}
+                accessibilityRole="button"
+                accessibilityLabel={precise ? 'Upload photos from library' : 'Upload a photo from library'}
+                hitSlop={8}
+                style={[styles.libraryBtn, atMax && styles.shutterDisabled]}
+              >
+                <Icon name="photo.on.rectangle" size={22} color="#fff" />
+              </Pressable>
+            </View>
             <Pressable
               onPress={capture}
               disabled={capturing || atMax}
@@ -269,6 +311,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.xl,
   },
   sideSlot: { width: 72, alignItems: 'center', justifyContent: 'center' },
+  libraryBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: Radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.6)',
+  },
   doneBtn: {
     backgroundColor: '#fff',
     borderRadius: Radius.pill,
