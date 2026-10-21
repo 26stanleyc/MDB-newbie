@@ -666,4 +666,19 @@ Upload `run_dust3r.py` + a zip of same-wall views, run on a GPU, get the fold an
   (0.53 of found holds) — more labeled routes feed the k-NN directly.** Planner
   metrics are sanity checks only — no ground-truth beta exists yet; its moves
   (~2–3 per route) look long vs. real climbing, reach model unvalidated.
+- **2026-10-20 (hold quality + wall angle connected)** — New analysis phase
+  (`pipeline/analysis.py`, `scan.analyze_scan`) runs right after detection on the
+  server, so results show first and this fills in ~7–17 s later (`Scan.analysis`
+  pending → done). Per hold: **quality** 0–1 (heuristic: size in cm + prominence =
+  per-hold Depth Anything V2 relief vs the bare wall's depth noise; volumes neutral 0.5),
+  **gripPoint** (existing `grasp.py`), **wallAngleDeg** (Marigold normals on the wall
+  around the hold; absolute only with CaptureMeta gravity, + overhang / − slab) and
+  **relWallAngleDeg** (vs the main wall, always). Scan-level `wall` summary. Quality
+  feeds the planner's existing hold-quality input (was a constant 0.6); the planner's
+  logic is unchanged (wall angle not used yet, by request). Optional fields added to
+  `rc/src/api/types.ts`; no UI shows them yet. Verified: endpoints via TestClient,
+  stored scans analyzed on restart, app results/path flow; evaluate_pipeline metrics
+  unchanged. **Not validated:** quality has no ground truth; absolute wall angles need
+  a real phone photo (dataset/uploads have no gravity) — sign convention checked
+  against Marigold docs (x right, y up, z toward camera) and with simulated tilt.
 - **(earlier)** — Built and verified Phase 1 M0–M6.

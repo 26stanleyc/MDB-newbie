@@ -38,7 +38,7 @@ def _disparity(crop_bgr: np.ndarray) -> np.ndarray:
 
 
 def hold_relief(bgr: np.ndarray, polygon: np.ndarray, pad: float = 0.6) -> dict:
-    """Return per-hold relief in a crop. Keys: crop, mask, relief(>=0), bbox."""
+    """Return per-hold relief in a crop. Keys: crop, mask, relief(>=0), bbox, ring_noise."""
     H, W = bgr.shape[:2]
     xs, ys = polygon[:, 0], polygon[:, 1]
     x0, y0, x1, y1 = int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())
@@ -64,6 +64,9 @@ def hold_relief(bgr: np.ndarray, polygon: np.ndarray, pad: float = 0.6) -> dict:
         plane = coef[0] * gx + coef[1] * gy + coef[2]
 
     relief = disp - plane          # >0 where closer than wall → protruding
+    # bare-wall scatter around the plane = this crop's depth noise (same units as relief)
+    ring_noise = float(np.std(relief[ring])) if ring.sum() >= 10 else 0.0
     relief[~mc] = 0.0
     relief = np.clip(relief, 0, None)
-    return {"crop": crop, "mask": mc, "relief": relief, "bbox": (cx0, cy0, cx1, cy1)}
+    return {"crop": crop, "mask": mc, "relief": relief, "bbox": (cx0, cy0, cx1, cy1),
+            "ring_noise": ring_noise}

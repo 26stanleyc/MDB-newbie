@@ -147,6 +147,32 @@ def build_scan(img: np.ndarray, dets: list[dict], id_prefix: str, namer: ColorNa
             "geom": geom, "imageSize": [W, H]}
 
 
+def analyze_scan(bgr: np.ndarray, scan: dict, gravity: dict | None = None) -> dict:
+    """Second phase (pipeline/analysis.py): per-hold quality + grip point and wall
+    angles. Returns {'geom': {hid: extra fields}, 'wall': {...}} to merge into a scan."""
+    from .analysis import hold_quality, wall_angles
+    from .wall_normals import normal_map
+
+    W, H = scan["imageSize"]
+    full_h, full_w = bgr.shape[:2]
+    mpp = meters_per_pixel(scan["geom"], scan["imageSize"])  # meters per working-image pixel
+    extra, masks = {}, {}
+    for h in scan["holds"]:
+        g = scan["geom"][h["id"]]
+        poly = np.array([[p["x"], p["y"]] for p in h["polygon"]], np.float32)
+        extra[h["id"]] = hold_quality(bgr, poly * [full_w, full_h], g["longPx"] * mpp * 100, g["kind"])
+        m = np.zeros((H, W), np.uint8)
+        cv2.fillPoly(m, [np.round(poly * [W, H]).astype(np.int32)], 1)
+        masks[h["id"]] = m.astype(bool)
+    normals = normal_map(working_image(bgr), toward_camera=True)
+    if normals.shape[:2] != (H, W):
+        normals = cv2.resize(normals, (W, H))
+    angles = wall_angles(normals, masks, gravity)
+    for hid, a in angles["holds"].items():
+        extra[hid].update(a)
+    return {"geom": extra, "wall": angles["wall"]}
+
+
 def process_image(bgr: np.ndarray, id_prefix: str) -> dict:
     """Full scan processing: detect → color routes."""
     img = working_image(bgr)
@@ -232,7 +258,9 @@ def plan_route(route: dict, geom: dict, image_size: list[int], height_cm: float,
     for hid in route["holdIds"]:
         c = geom[hid]["center"]
         # x right, y up, in meters
-        holds.append(BetaHold(hid, np.array([c["x"] * W * mpp, (1 - c["y"]) * H * mpp])))
+        # hold quality from analyze_scan when available; the planner's default otherwise
+        holds.append(BetaHold(hid, np.array([c["x"] * W * mpp, (1 - c["y"]) * H * mpp]),
+                              geom[hid].get("quality", 0.6)))
     if not holds:
         return []
     if len(holds) == 1:

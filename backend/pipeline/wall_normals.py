@@ -31,11 +31,13 @@ def _pipe():
 
 
 def normal_map(bgr: np.ndarray, steps: int = 4, resolution: int = 768,
-               ensemble: int = 1) -> np.ndarray:
+               ensemble: int = 1, toward_camera: bool = False) -> np.ndarray:
     """Per-pixel unit surface normals (H, W, 3), camera frame, oriented toward camera.
 
     `ensemble` averages several stochastic predictions for a smoother, less noisy
     normal field (slower). `resolution` is the model's processing size.
+    toward_camera=True keeps Marigold's own frame (x right, y up, z toward the
+    camera, outward normals); the default flips to point into the wall.
     """
     from PIL import Image
     img = Image.fromarray(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB))
@@ -43,6 +45,8 @@ def normal_map(bgr: np.ndarray, steps: int = 4, resolution: int = 768,
                   processing_resolution=resolution)
     n = np.asarray(out.prediction)[0].astype(np.float32)   # (H, W, 3) in [-1, 1]
     n /= np.linalg.norm(n, axis=-1, keepdims=True) + 1e-9
+    if toward_camera:
+        return n
     # Orient so the camera-facing component is consistent (z toward camera = negative).
     flip = n[..., 2] > 0
     n[flip] *= -1

@@ -34,7 +34,7 @@ sys.path.insert(0, BACKEND)
 
 from pipeline.places import Place, PlaceRegistry, haversine_m  # noqa: E402
 from pipeline.quality import check_image_quality  # noqa: E402
-from pipeline.scan import group_routes, plan_route, process_image  # noqa: E402
+from pipeline.scan import analyze_scan, group_routes, plan_route, process_image  # noqa: E402
 
 STORE = os.environ.get("CAPITAN_STORE", os.path.join(BACKEND, "store"))
 SCANS_DIR = os.path.join(STORE, "scans")
@@ -48,6 +48,8 @@ SEED_PLACES = [
     ("place-bp", "Bridges Rock Gym"),
 ]
 PUBLIC_SCAN_FIELDS = ("id", "placeId", "createdAt", "status", "holds", "routes")
+# Per-hold fields from the analysis phase, copied from geom onto each hold in responses.
+HOLD_ANALYSIS_FIELDS = ("quality", "gripPoint", "wallAngleDeg", "relWallAngleDeg")
 
 app = FastAPI(title="Capitan backend")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -103,6 +105,8 @@ def _load() -> None:
     for scan in scans.values():  # server restarted mid-processing → redo
         if scan["status"] == "processing":
             _worker.submit(_process, scan["id"])
+        elif scan["status"] == "done" and scan.get("analysis") in (None, "pending"):
+            _worker.submit(_analyze, scan["id"])  # includes scans from before the analysis phase existed
 
 
 # --- helpers -----------------------------------------------------------------
@@ -131,6 +135,15 @@ def _get_route(scan: dict, route_id: str) -> dict:
 def _public(scan: dict, request: Request) -> dict:
     out = {k: scan[k] for k in PUBLIC_SCAN_FIELDS}
     out["imageUri"] = str(request.url_for("scan_image", scan_id=scan["id"]))
+    geom = scan.get("geom", {})
+    out["holds"] = [
+        {**h, **{k: geom[h["id"]][k] for k in HOLD_ANALYSIS_FIELDS if k in geom.get(h["id"], {})}}
+        for h in scan["holds"]
+    ]
+    if "analysis" in scan:
+        out["analysis"] = scan["analysis"]  # 'pending' | 'done' | 'failed'
+    if "wall" in scan:
+        out["wall"] = scan["wall"]
     return out
 
 
@@ -146,14 +159,43 @@ def _process(scan_id: str) -> None:
     try:
         t0 = time.time()
         with open(os.path.join(_scan_dir(scan_id), "view_0.jpg"), "rb") as f:
-            result = process_image(_decode(f.read()), scan_id)
+            bgr = _decode(f.read())
+        result = process_image(bgr, scan_id)
         with _lock:
-            scan.update(result, status="done", processingSec=round(time.time() - t0, 2))
+            scan.update(result, status="done", processingSec=round(time.time() - t0, 2), analysis="pending")
             _save_scan(scan)
     except Exception:
         traceback.print_exc()
         with _lock:
             scan.update(status="failed", error=traceback.format_exc(limit=3))
+            _save_scan(scan)
+        return
+    _analyze(scan_id, bgr)  # results are already visible; this fills in afterwards
+
+
+def _analyze(scan_id: str, bgr: np.ndarray | None = None) -> None:
+    """Hold quality, grip points and wall angles (pipeline/analysis.py)."""
+    scan = scans[scan_id]
+    try:
+        t0 = time.time()
+        if bgr is None:
+            with open(os.path.join(_scan_dir(scan_id), "view_0.jpg"), "rb") as f:
+                bgr = _decode(f.read())
+        metas = scan.get("captureMeta") or [{}]
+        with _lock:  # corrections may edit holds meanwhile — work on a snapshot
+            snap = {"holds": list(scan["holds"]), "geom": {k: dict(v) for k, v in scan["geom"].items()},
+                    "imageSize": scan["imageSize"]}
+        result = analyze_scan(bgr, snap, metas[0].get("gravity"))
+        with _lock:
+            for hid, extra in result["geom"].items():
+                if hid in scan["geom"]:
+                    scan["geom"][hid].update(extra)
+            scan.update(wall=result["wall"], analysis="done", analysisSec=round(time.time() - t0, 2))
+            _save_scan(scan)
+    except Exception:
+        traceback.print_exc()
+        with _lock:
+            scan.update(analysis="failed", analysisError=traceback.format_exc(limit=3))
             _save_scan(scan)
 
 
