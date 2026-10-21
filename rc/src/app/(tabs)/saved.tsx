@@ -1,13 +1,25 @@
 import { router } from 'expo-router';
+import { useEffect } from 'react';
 import { FlatList, StyleSheet, View } from 'react-native';
 
+import { api } from '@/api';
 import { Card, Icon, MessageState, Screen, Text } from '@/components/ui';
 import { useScans } from '@/store/use-scans';
 import { Spacing, useThemeColors } from '@/theme';
 
 export default function Saved() {
   const placesWithScans = useScans((s) => s.placesWithScans);
+  const addScan = useScans((s) => s.addScan);
+  useScans((s) => s.scans); // subscribe, so added scans re-render the list
   const places = placesWithScans();
+
+  // Starter walls from the backend join the saved list (addScan skips duplicates).
+  useEffect(() => {
+    api
+      .getFeaturedScans()
+      .then((walls) => walls.forEach(addScan))
+      .catch(() => {}); // offline / no backend: just the climber's own scans
+  }, [addScan]);
 
   return (
     <Screen>

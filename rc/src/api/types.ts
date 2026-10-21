@@ -113,6 +113,15 @@ export type CaptureMeta = {
   gravity?: Vec3; // DeviceMotion gravity at the moment of capture
 };
 
+/** A starter wall every app gets in Saved walls (seeded on the backend). */
+export type FeaturedScan = {
+  scanId: string;
+  placeId: string;
+  placeName: string;
+  imageUri: string;
+  createdAt: string;
+};
+
 /** Mocked auth (§5, §8). Minimal shape; fleshed out in Phase 2. */
 export type User = { id: string; email: string; profile?: ClimberProfile };
 
@@ -173,6 +182,8 @@ export interface CapitanApi {
   searchPlaces(query: string, lat?: number, lng?: number): Promise<Place[]>;
   createPlace(name: string, lat?: number, lng?: number): Promise<Place>;
   listScansByPlace(placeId: string): Promise<Scan[]>;
+  // Starter walls shown in Saved walls before (and alongside) the climber's own scans.
+  getFeaturedScans(): Promise<FeaturedScan[]>;
 
   signUp(email: string, password: string): Promise<User>;
   logIn(email: string, password: string): Promise<User>;

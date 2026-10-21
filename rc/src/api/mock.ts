@@ -4,6 +4,7 @@ import type {
   CapitanApi,
   CaptureMeta,
   ClimberProfile,
+  FeaturedScan,
   Hold,
   HoldCorrection,
   ImageInput,
@@ -288,6 +289,18 @@ export const mockApi: CapitanApi = {
         .filter((s) => s.placeId === placeId)
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     );
+  },
+
+  async getFeaturedScans(): Promise<FeaturedScan[]> {
+    await delay(300);
+    // Mock: the fixture walls are the starter set.
+    return Object.values(SEED_SCANS).map((s) => ({
+      scanId: s.id,
+      placeId: s.placeId,
+      placeName: NEARBY_PLACES.find((p) => p.id === s.placeId)?.name ?? 'Gym',
+      imageUri: s.imageUri,
+      createdAt: s.createdAt,
+    }));
   },
 
   async signUp(email: string, _password: string): Promise<User> {

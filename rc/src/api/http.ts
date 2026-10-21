@@ -7,6 +7,7 @@ import type {
   CapitanApi,
   CaptureMeta,
   ClimberProfile,
+  FeaturedScan,
   HoldCorrection,
   ImageInput,
   PathOption,
@@ -126,6 +127,8 @@ export const httpApi: CapitanApi = {
     request('/places', json({ name, lat, lng })),
 
   listScansByPlace: (placeId: string): Promise<Scan[]> => request(`/places/${placeId}/scans`),
+
+  getFeaturedScans: (): Promise<FeaturedScan[]> => request('/scans/featured'),
 
   signUp: mockApi.signUp,
   logIn: mockApi.logIn,

@@ -265,6 +265,8 @@ async def create_scan(
     placeId: str = Form(...),
     metas: str = Form("[]"),
     mode: str = Form("quick"),
+    featured: bool = Form(False),
+    source: str | None = Form(None),
 ) -> dict:
     placeId = _resolve_place_id(placeId)  # a gym picked from Google joins the registry here
     scan_id = f"scan-{datetime.now():%Y%m%d-%H%M%S}-{uuid.uuid4().hex[:6]}"
@@ -277,11 +279,23 @@ async def create_scan(
         "holds": [], "routes": [], "mode": mode, "views": len(images),
         "captureMeta": json.loads(metas), "pathOverrides": {},
     }
+    if featured:  # starter walls every app shows in Saved walls (scripts/seed_featured.py)
+        scan.update(featured=True, source=source)
     with _lock:
         scans[scan_id] = scan
         _save_scan(scan)
     _worker.submit(_process, scan_id)
     return {"scanId": scan_id}
+
+
+@app.get("/scans/featured")
+def featured_scans(request: Request) -> list[dict]:
+    """Starter walls for the Saved walls tab, shaped like the app's saved-scan record."""
+    names = {p.id: p.name for p in registry.places}
+    out = [{"scanId": s["id"], "placeId": s["placeId"], "placeName": names.get(s["placeId"], "Gym"),
+            "imageUri": str(request.url_for("scan_image", scan_id=s["id"])), "createdAt": s["createdAt"]}
+           for s in scans.values() if s.get("featured") and s["status"] == "done"]
+    return sorted(out, key=lambda x: x["createdAt"], reverse=True)
 
 
 @app.get("/scans/{scan_id}")

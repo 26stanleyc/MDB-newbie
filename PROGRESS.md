@@ -768,4 +768,13 @@ Upload `run_dust3r.py` + a zip of same-wall views, run on a GPU, get the fold an
   location at Mosaic: "You're at Mosaic Boulders?" card → scan → gym registered with its
   Google id, next visit shows it with its scan count. Check Google's caching terms
   before launch.
+- **2026-10-21 (starter walls in Saved walls)** — `scripts/seed_featured.py` uploads 6
+  training walls through the running server (Mosaic m13/m04/m05/m07 under "Mosaic
+  Boulders"; labeled bh/0075, bh/0917 under "Sample gym (training data)"), fully
+  processed and flagged `featured`; idempotent. `GET /scans/featured` serves them and the
+  Saved tab adds them to the local history on open (`getFeaturedScans`, duplicates
+  skipped). Fixed two app bugs found on the way: the Saved list never re-rendered when
+  scans were added (it subscribed to a helper function, not the scan list), and scans at
+  a gym picked from Google were saved under the temporary `g:` id instead of the
+  server's registry id (duplicate gym rows). Verified in the web app.
 - **(earlier)** — Built and verified Phase 1 M0–M6.

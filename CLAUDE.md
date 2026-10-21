@@ -27,6 +27,7 @@ PYTORCH_ENABLE_MPS_FALLBACK=1 ./.venv/bin/python backend/scripts/evaluate_holds.
 ./.venv/bin/python backend/scripts/plan_beta.py --stem 0075     # M12 beta planner
 ./.venv/bin/python backend/scripts/evaluate_pipeline.py          # all stages, held-out split → backend/eval/metrics_test.json
 ./.venv/bin/python backend/scripts/build_color_refs.py           # rebuild hold-color k-NN refs after labeling routes
+./.venv/bin/python backend/scripts/seed_featured.py           # starter walls for Saved walls (server must be running)
 ./.venv/bin/python backend/scripts/judge_paths.py fit --source both   # planner weights from Claude judgments + app path picks (--save to apply)
 PYTORCH_ENABLE_MPS_FALLBACK=1 ./.venv/bin/python backend/scripts/train_holds.py --split train --out backend/artifacts/m9_train_split.pt   # model for evaluation
 PYTORCH_ENABLE_MPS_FALLBACK=1 ./.venv/bin/python backend/scripts/train_holds.py --split all    # the app's model (~70 min MPS)

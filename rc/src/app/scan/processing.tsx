@@ -32,7 +32,7 @@ export default function ProcessingScreen() {
         if (scan.status === 'done') {
           addScan({
             scanId: scan.id,
-            placeId,
+            placeId: scan.placeId, // the server's id: a gym picked from Google gets a permanent one
             placeName,
             imageUri: scan.imageUri,
             createdAt: scan.createdAt,
