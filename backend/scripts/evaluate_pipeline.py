@@ -166,6 +166,8 @@ def plan_metrics(route_ids: list[str], geom: dict, image_size: list[int]) -> dic
     for height, span in CLIMBERS:
         steps, stab = plan_beta(holds, height, span, weights=PLANNER_W)
         hands = [s for s in steps if s.limb in ("LH", "RH")]
+        if len(hands) > 2 and hands[-1].hold_id == hands[-2].hold_id:
+            hands = hands[:-1]  # the finish match isn't a move (keeps metrics comparable)
         feet = [s for s in steps if s.limb in ("LF", "RF")]
         out["reached_top"].append(hands[-1].hold_id == top)
         out["moves"].append(len(hands) - 2)  # both hands start on one hold: 2 steps, 0 moves

@@ -813,4 +813,14 @@ Upload `run_dust3r.py` + a zip of same-wall views, run on a GPU, get the fold an
   through the server → 157 holds (was 177), review from the web app logged; scratch
   store → 2 reviewed scans in training (11 → 13 images; `--no-app-feedback` 11), an
   unreviewed recolor as a color label only.
+- **2026-10-21 (start/finish rules, path markers, zoom)** — The planner now follows the
+  start/finish rule: tap-to-pick routes start both hands on the tapped start hold
+  (`route.startHoldId` → `plan_beta(start_id=…)`), and every path that reaches the finish
+  ends with a match step (the trailing hand joins on the finish hold). The match isn't a
+  move: `path_features` skips same-hold steps and `evaluate_pipeline.py` drops it from move
+  counts, so stored judgments, app picks and `metrics_test.json` stay comparable (re-run:
+  every metric unchanged). App: compact path markers beside each hold (R1/L2, round = hand,
+  square = foot, one pill per shared hold, dashed hand line, current step inverted), and
+  wall-photo zoom about the fingers, clamped to the photo, double-tap zoom in/out,
+  full-resolution image, constant-size overlays, taps mapped through the zoom.
 - **(earlier)** — Built and verified Phase 1 M0–M6.

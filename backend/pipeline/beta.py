@@ -96,11 +96,13 @@ def move_features(a: Hold, b: Hold, reach: Reach) -> np.ndarray:
 
 
 def path_features(hand_path: list[str], holds: list[Hold], reach: Reach) -> np.ndarray:
-    """Summed move features of a hand sequence (for comparing / learning weights)."""
+    """Summed move features of a hand sequence (for comparing / learning weights).
+    A hand joining the other on the same hold (the finish match) is not a move."""
     by_id = {h.id: h for h in holds}
     f = np.zeros(len(FEATURES))
     for a, b in zip(hand_path, hand_path[1:]):
-        f += move_features(by_id[a], by_id[b], reach)
+        if a != b:
+            f += move_features(by_id[a], by_id[b], reach)
     return f
 
 
@@ -224,7 +226,9 @@ def plan_beta(holds: list[Hold], height_cm: float, wingspan_cm: float,
     """Full personalized beta with a balance model.
 
     Returns (steps, stabilities) where stabilities[k] is the stance stability (0..1)
-    after move k's hand placement + its foot adjustment.
+    after move k's hand placement + its foot adjustment. Both hands start on the start
+    hold and, when the finish is reached, end on the finish hold (a last "match"
+    step for the trailing hand, which is not a move and adds no stability entry).
     """
     reach = Reach.from_body(height_cm, wingspan_cm, hand_frac)
     by_id = {h.id: h for h in holds}
@@ -255,4 +259,9 @@ def plan_beta(holds: list[Hold], height_cm: float, wingspan_cm: float,
         if fid and (foot not in stance or not np.array_equal(stance[foot], pos(fid))):
             stance[foot] = pos(fid); steps.append(Step(order, fid, foot)); order += 1
         stabilities.append(stance_stability(stance))
+    # finish: the trailing hand matches the leading one on the finish hold
+    finish = finish_id or max(holds, key=lambda h: h.pos[1]).id
+    if len(hand_path) > 1 and hand_path[-1] == finish:
+        trailing = limb_cycle[(len(hand_path) - 1) % 2]
+        steps.append(Step(order, finish, trailing))
     return steps, stabilities

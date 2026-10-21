@@ -276,6 +276,8 @@ function StepControls({
         {step ? (
           <Text variant="caption" tone="secondary">
             {limbName[step.limb] ?? step.limb}
+            {/* the planner ends with both hands on the finish hold */}
+            {index === total - 1 && step.limb.endsWith('H') ? ' · match on the finish' : ''}
           </Text>
         ) : null}
       </View>
