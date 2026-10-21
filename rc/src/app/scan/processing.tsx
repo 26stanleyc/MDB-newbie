@@ -8,7 +8,6 @@ import { Button, MessageState, Screen, Text } from '@/components/ui';
 import { api, type Scan } from '@/api';
 import { weakDetection } from '@/lib/detection-check';
 import { useScanDraft } from '@/store/use-scan-draft';
-import { useScans } from '@/store/use-scans';
 import { useToast } from '@/store/use-toast';
 import { Fonts, Spacing, useThemeColors } from '@/theme';
 
@@ -24,7 +23,6 @@ export default function ProcessingScreen() {
     uri: string;
     placeName: string;
   }>();
-  const addScan = useScans((s) => s.addScan);
   const toastDone = useToast((s) => s.done);
   const [failed, setFailed] = useState(false);
   // Detections too weak to trust: suggest a retake before showing results.
@@ -41,20 +39,17 @@ export default function ProcessingScreen() {
   // Save the scan and show its routes.
   const finish = useCallback(
     (scan: Scan) => {
-      addScan({
-        scanId: scan.id,
-        placeId: scan.placeId, // the server's id: a gym picked from Google gets a permanent one
-        placeName,
-        imageUri: scan.imageUri,
-        createdAt: scan.createdAt,
-      });
       toastDone(`${scan.routes.length} ${scan.routes.length === 1 ? 'route' : 'routes'} found`);
-      router.replace({
+      // Close the scan flow (and the camera modal under it), then open results as a
+      // normal page over Home: pushed above the modal, iOS shows it as a card shifted
+      // down and its bottom sheet ends up off-screen.
+      if (router.canDismiss()) router.dismissAll();
+      router.push({
         pathname: '/scan/results',
         params: { scanId, uri, placeName, step: 'verify' }, // check the holds first
       });
     },
-    [scanId, uri, placeName, addScan, toastDone],
+    [scanId, uri, placeName, toastDone],
   );
 
   useEffect(() => {

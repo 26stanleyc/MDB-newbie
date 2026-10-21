@@ -25,7 +25,7 @@ export default function Saved() {
   useEffect(() => {
     api
       .getFeaturedScans()
-      .then((walls) => walls.forEach(addScan))
+      .then((walls) => walls.forEach((w) => addScan(w)))
       .catch(() => {}); // offline / no backend: just the climber's own scans
   }, [addScan]);
 

@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useState } from 'react';
 
 import { api, type Hold, type Route } from '@/api';
 
@@ -13,12 +13,11 @@ export function useRoutePicker(scanId: string, holds: Hold[]) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Stable, so screens can reset from an effect.
-  const reset = useCallback(() => {
+  const reset = () => {
     setStartId(null);
     setSelected(new Set());
     setError(null);
-  }, []);
+  };
 
   const tap = async (holdId: string) => {
     if (busy) return;

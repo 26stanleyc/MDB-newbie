@@ -20,6 +20,7 @@ import {
 import { api, type VGrade } from '@/api';
 import { useAsyncData } from '@/lib/use-async-data';
 import { useProfile } from '@/store/use-profile';
+import { useScans } from '@/store/use-scans';
 import { useToast } from '@/store/use-toast';
 import { Radius, Spacing, TextStyles, useThemeColors } from '@/theme';
 
@@ -33,6 +34,7 @@ export default function PathScreen() {
   }>();
   const c = useThemeColors();
   const toast = useToast();
+  const addScan = useScans((s) => s.addScan);
   const profile = useProfile((s) => s.profile);
   const notPersonalized = !profile;
 
@@ -125,10 +127,21 @@ export default function PathScreen() {
     toast.done(`Graded ${g}`);
   };
 
-  // Done with this route: back to the scan, ready to pick the next one.
+  // Done with this route: the wall joins Home and Saved walls now (not when the
+  // scan finished processing), then back to Home.
   const finishRoute = () => {
+    addScan(
+      {
+        scanId: scan.id,
+        placeId: scan.placeId, // the server's id: a gym picked from Google gets a permanent one
+        placeName,
+        imageUri: scan.imageUri,
+        createdAt: scan.createdAt,
+      },
+      { restore: true },
+    );
     toast.done('Route finished');
-    router.dismissTo({ pathname: '/scan/results', params: { scanId, placeName, finished: routeId } });
+    router.dismissTo('/home');
   };
 
   return (

@@ -19,7 +19,8 @@ type ScansState = {
   places: Record<string, Pick<Place, 'id' | 'name'>>;
   /** Scans the climber deleted; kept so starter walls don't come back on the next fetch. */
   removed: string[];
-  addScan: (scan: SavedScan) => void;
+  /** restore: also bring back a wall the climber deleted (they just climbed it again). */
+  addScan: (scan: SavedScan, opts?: { restore?: boolean }) => void;
   removeScan: (scanId: string) => void;
   placesWithScans: () => { id: string; name: string; count: number }[];
   scansForPlace: (placeId: string) => SavedScan[];
@@ -32,12 +33,13 @@ export const useScans = create<ScansState>()(
       scans: [],
       places: {},
       removed: [],
-      addScan: (scan) =>
+      addScan: (scan, opts) =>
         set((s) => {
           if (s.scans.some((e) => e.scanId === scan.scanId)) return s; // dedupe
-          if (s.removed.includes(scan.scanId)) return s; // deleted by the climber
+          if (s.removed.includes(scan.scanId) && !opts?.restore) return s; // deleted by the climber
           return {
             scans: [scan, ...s.scans],
+            removed: s.removed.filter((id) => id !== scan.scanId),
             places: {
               ...s.places,
               [scan.placeId]: { id: scan.placeId, name: scan.placeName },

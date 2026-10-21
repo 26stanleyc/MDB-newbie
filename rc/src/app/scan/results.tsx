@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { FlatList, StyleSheet, View } from 'react-native';
 import Animated, { SlideInDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -14,11 +14,10 @@ import { useRoutePicker } from '@/lib/use-route-picker';
 import { Radius, Spacing, useThemeColors } from '@/theme';
 
 export default function ResultsScreen() {
-  const { scanId, placeName, step, finished } = useLocalSearchParams<{
+  const { scanId, placeName, step } = useLocalSearchParams<{
     scanId: string;
     placeName: string;
     step?: 'verify';
-    finished?: string; // route id the climber just finished (path screen → Finish route)
   }>();
   const c = useThemeColors();
   const insets = useSafeAreaInsets();
@@ -32,11 +31,6 @@ export default function ResultsScreen() {
   const [off, setOff] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const picker = useRoutePicker(scanId, scan?.holds ?? []);
-  // Back from a finished route: clear the old pick so the next start hold is fresh.
-  const { reset: resetPicker } = picker;
-  useEffect(() => {
-    if (finished) resetPicker();
-  }, [finished, resetPicker]);
 
   const toggleHold = (id: string) =>
     setOff((prev) => {
