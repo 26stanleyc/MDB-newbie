@@ -16,7 +16,7 @@ import torch
 
 from .beta import Hold as BetaHold, plan_beta
 from .holds import EVAL_MAX_SIDE, build_model
-from .routes import classify_and_group, hold_color_lab
+from .routes import ColorNamer, classify_and_group, hold_color_lab, hold_lab, linear_exposure
 
 BACKEND = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_CKPT = os.path.join(BACKEND, "artifacts", "m9_maskrcnn.pt")
@@ -26,6 +26,7 @@ MAX_DETECTIONS = 400       # walls carry up to ~325 holds
 ASSUMED_HOLD_M = 0.14      # average hold's longest side (metric scale anchor, see scale_from_holds.py)
 WALL_M_RANGE = (2.0, 10.0) # clamp the implied image height to something wall-sized
 FALLBACK_WALL_M = 4.5      # image height if there are too few holds to anchor on
+ROUTE_LINK_M = 1.2         # same-color holds farther apart than a tall climber's move are separate routes
 
 _model = None
 _device = None
@@ -45,59 +46,96 @@ def _get_model():
         return _model, _device
 
 
-def detect_holds(bgr: np.ndarray) -> tuple[list[dict], tuple[int, int], np.ndarray]:
-    """Run the hold detector. Returns (holds, (w, h), working image).
-
-    Each hold: polygon (normalized), confidence, kind ('hold'|'volume'),
-    center (normalized), long_px (longest side in working-image pixels), mask.
-    """
+def working_image(bgr: np.ndarray) -> np.ndarray:
+    """Downscale to the detector's working resolution (long side <= EVAL_MAX_SIDE)."""
     h, w = bgr.shape[:2]
     scale = min(1.0, EVAL_MAX_SIDE / max(h, w))
-    img = cv2.resize(bgr, (round(w * scale), round(h * scale))) if scale < 1 else bgr
-    H, W = img.shape[:2]
+    return cv2.resize(bgr, (round(w * scale), round(h * scale))) if scale < 1 else bgr
 
-    model, device = _get_model()
+
+def detection_from_mask(mask: np.ndarray, score: float, kind: str) -> dict | None:
+    """Polygon (normalized), confidence, kind, center (normalized), long_px, mask."""
+    H, W = mask.shape
+    cnts, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not cnts:
+        return None
+    cnt = cv2.approxPolyDP(max(cnts, key=cv2.contourArea), 1.5, True).reshape(-1, 2)
+    if len(cnt) < 3:
+        return None
+    x, y, bw, bh = cv2.boundingRect(cnt)
+    m = cv2.moments(cnt)
+    cx, cy = (m["m10"] / m["m00"], m["m01"] / m["m00"]) if m["m00"] else (x + bw / 2, y + bh / 2)
+    return {
+        "polygon": [{"x": float(px / W), "y": float(py / H)} for px, py in cnt],
+        "confidence": float(score),
+        "kind": kind,
+        "center": {"x": float(cx / W), "y": float(cy / H)},
+        "long_px": float(max(bw, bh)),
+        "mask": mask,
+    }
+
+
+def detect_holds(img: np.ndarray, model=None) -> list[dict]:
+    """Run the hold detector on a working-resolution BGR image."""
+    if model is None:
+        model, device = _get_model()
+    else:
+        device = next(model.parameters()).device
     rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     tensor = torch.as_tensor(rgb.transpose(2, 0, 1), dtype=torch.float32) / 255.0
     with _lock, torch.no_grad():
         out = model([tensor.to(device)])[0]
 
-    holds = []
+    dets = []
     masks = (out["masks"].squeeze(1).cpu().numpy() > 0.5)
     for mask, score, label in zip(masks, out["scores"].cpu().numpy(), out["labels"].cpu().numpy()):
         if score < SCORE_MIN or not mask.any():
             continue
-        cnts, _ = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        cnt = max(cnts, key=cv2.contourArea)
-        cnt = cv2.approxPolyDP(cnt, 1.5, True).reshape(-1, 2)
-        if len(cnt) < 3:
-            continue
-        x, y, bw, bh = cv2.boundingRect(cnt)
-        m = cv2.moments(cnt)
-        cx, cy = (m["m10"] / m["m00"], m["m01"] / m["m00"]) if m["m00"] else (x + bw / 2, y + bh / 2)
-        holds.append({
-            "polygon": [{"x": float(px / W), "y": float(py / H)} for px, py in cnt],
-            "confidence": float(score),
-            "kind": "volume" if int(label) == 2 else "hold",
-            "center": {"x": float(cx / W), "y": float(cy / H)},
-            "long_px": float(max(bw, bh)),
-            "mask": mask,
-        })
-    return holds, (W, H), img
+        d = detection_from_mask(mask, float(score), "volume" if int(label) == 2 else "hold")
+        if d:
+            dets.append(d)
+    return dets
 
 
-def process_image(bgr: np.ndarray, id_prefix: str) -> dict:
-    """Full scan processing. Returns {'holds', 'routes', 'geom', 'imageSize'}."""
-    dets, (W, H), img = detect_holds(bgr)
-    lab_img = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+_namer: ColorNamer | None = None
+_namer_loaded = False
 
-    kept, labs = [], []
-    for d in dets:
-        lab = hold_color_lab(img, d["mask"], lab_img)
-        if lab is not None:
-            kept.append(d)
-            labs.append(lab)
-    names, _ = classify_and_group(labs) if labs else ([], [])
+
+def default_namer() -> ColorNamer | None:
+    """The app's color namer (artifacts/color_refs.npz, built by build_color_refs.py)."""
+    global _namer, _namer_loaded
+    if not _namer_loaded:
+        _namer, _namer_loaded = ColorNamer.load(), True
+        if _namer is None:
+            print("WARNING: no artifacts/color_refs.npz — using the palette color rule. "
+                  "Run backend/scripts/build_color_refs.py.", flush=True)
+    return _namer
+
+
+def build_scan(img: np.ndarray, dets: list[dict], id_prefix: str, namer: ColorNamer | None | bool = None) -> dict:
+    """Color stage: holds → named colors → one route per color.
+    namer: None = the app's default; False = force the old palette rule.
+    Returns {'holds', 'routes', 'geom', 'imageSize'}."""
+    H, W = img.shape[:2]
+    namer = default_namer() if namer is None else (namer or None)
+
+    if namer is not None:
+        lin = linear_exposure(img, np.any([d["mask"] for d in dets], axis=0) if dets else np.zeros((H, W), bool))
+        kept, names = [], []
+        for d in dets:
+            lab = hold_lab(lin, d["mask"])
+            if lab is not None:
+                kept.append(d)
+                names.append(namer.name(lab))
+    else:  # no labeled references yet → palette rule
+        lab_img = cv2.cvtColor(img, cv2.COLOR_BGR2LAB)
+        kept, labs = [], []
+        for d in dets:
+            lab = hold_color_lab(img, d["mask"], lab_img)
+            if lab is not None:
+                kept.append(d)
+                labs.append(lab)
+        names, _ = classify_and_group(labs) if labs else ([], [])
 
     holds, geom = [], {}
     for i, (d, name) in enumerate(zip(kept, names)):
@@ -105,28 +143,76 @@ def process_image(bgr: np.ndarray, id_prefix: str) -> dict:
         holds.append({"id": hid, "polygon": d["polygon"], "color": name, "confidence": d["confidence"]})
         geom[hid] = {"center": d["center"], "longPx": d["long_px"], "kind": d["kind"]}
 
-    return {"holds": holds, "routes": group_routes(holds, id_prefix), "geom": geom, "imageSize": [W, H]}
+    return {"holds": holds, "routes": group_routes(holds, id_prefix, geom=geom, image_size=[W, H]),
+            "geom": geom, "imageSize": [W, H]}
 
 
-def group_routes(holds: list[dict], id_prefix: str, previous: list[dict] | None = None) -> list[dict]:
-    """One route per color (the app's model), keeping ids/grades of existing routes."""
+def process_image(bgr: np.ndarray, id_prefix: str) -> dict:
+    """Full scan processing: detect → color routes."""
+    img = working_image(bgr)
+    return build_scan(img, detect_holds(img), id_prefix)
+
+
+def group_routes(holds: list[dict], id_prefix: str, previous: list[dict] | None = None,
+                 geom: dict | None = None, image_size: list[int] | None = None) -> list[dict]:
+    """Holds → routes: same color AND chained within ROUTE_LINK_M of each other, so two
+    same-colored routes on one wall stay separate. Without geometry: one route per color.
+    Existing routes (after corrections) keep their id/name/grade by best hold overlap."""
     by_color: dict[str, list[str]] = {}
     for h in holds:
         by_color.setdefault(h["color"], []).append(h["id"])
-    prev = {r["color"]: r for r in previous or []}
-    routes = []
+
+    groups: list[tuple[str, list[str]]] = []
     for color, ids in by_color.items():
-        old = prev.get(color, {})
+        comps = _spatial_components(ids, geom, image_size) if geom and image_size else [ids]
+        groups += [(color, c) for c in sorted(comps, key=len, reverse=True)]
+
+    prev = list(previous or [])
+    used: set[str] = set()
+    routes, count = [], {}
+    for color, ids in groups:
+        count[color] = count.get(color, 0) + 1
+        n = count[color]
+        old = max((r for r in prev if r["color"] == color and r["id"] not in used),
+                  key=lambda r: len(set(r["holdIds"]) & set(ids)), default=None)
+        if old is not None and not set(old["holdIds"]) & set(ids):
+            old = None
+        if old is not None:
+            used.add(old["id"])
         route = {
-            "id": old.get("id", f"{id_prefix}-{color}"),
+            "id": old["id"] if old else f"{id_prefix}-{color}" + (f"-{n}" if n > 1 else ""),
             "color": color,
-            "displayName": old.get("displayName", color.capitalize()),
+            "displayName": old["displayName"] if old else color.capitalize() + (f" {n}" if n > 1 else ""),
             "holdIds": ids,
         }
-        if old.get("communityGrade"):
+        if old and old.get("communityGrade"):
             route["communityGrade"] = old["communityGrade"]
         routes.append(route)
-    return routes
+    # biggest routes first; stray one- or two-hold fragments sink to the bottom of the list
+    return sorted(routes, key=lambda r: len(r["holdIds"]), reverse=True)
+
+
+def _spatial_components(ids: list[str], geom: dict, image_size: list[int]) -> list[list[str]]:
+    """Single-linkage components of hold centers with links <= ROUTE_LINK_M (meters)."""
+    W, H = image_size
+    mpp = meters_per_pixel(geom, image_size)
+    pts = np.array([[geom[i]["center"]["x"] * W * mpp, geom[i]["center"]["y"] * H * mpp] for i in ids])
+    parent = list(range(len(ids)))
+
+    def find(a: int) -> int:
+        while parent[a] != a:
+            parent[a] = parent[parent[a]]
+            a = parent[a]
+        return a
+
+    for a in range(len(ids)):
+        for b in range(a + 1, len(ids)):
+            if np.linalg.norm(pts[a] - pts[b]) <= ROUTE_LINK_M:
+                parent[find(a)] = find(b)
+    comps: dict[int, list[str]] = {}
+    for k, i in enumerate(ids):
+        comps.setdefault(find(k), []).append(i)
+    return list(comps.values())
 
 
 def meters_per_pixel(geom: dict, image_size: list[int]) -> float:

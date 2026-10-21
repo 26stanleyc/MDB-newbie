@@ -53,6 +53,10 @@ class Step:
     limb: Limb
 
 
+MOVE_COST = 0.6       # fixed effort per hand move
+MAX_DROP = 0.4        # m a hand may move down (traverses)
+
+
 def _cost(a: Hold, b: Hold, reach: Reach) -> float:
     d = float(np.linalg.norm(b.pos - a.pos))          # 3D distance (works for 2D too)
     up = b.pos[1] - a.pos[1]
@@ -60,7 +64,8 @@ def _cost(a: Hold, b: Hold, reach: Reach) -> float:
     # prefer: shorter moves, upward progress, good holds, staying in reach, and small
     # lateral jumps (big sideways moves risk barn-dooring = balance-aware search).
     strain = d / max(reach.hand_move, 1e-6)           # 0..1 within reach
-    return (d + 0.5 * strain + 0.8 * (1.0 - b.grasp)
+    # MOVE_COST: every move is effort, so longer reach → fewer moves (personalization).
+    return (MOVE_COST + d + 0.5 * strain + 0.8 * (1.0 - b.grasp)
             + (0.6 if up < 0 else 0.0)
             + 0.4 * lateral / max(reach.hand_move, 1e-6))
 
@@ -96,26 +101,39 @@ def stance_stability(stance: dict[Limb, np.ndarray]) -> float:
 
 def plan_hand_path(holds: list[Hold], reach: Reach,
                    start_id: str | None = None, finish_id: str | None = None) -> list[str]:
-    """Lowest-cost sequence of handholds from the start (lowest) to finish (highest)."""
-    by_id = {h.id: h for h in holds}
-    start = start_id or min(holds, key=lambda h: h.pos[1]).id
-    finish = finish_id or max(holds, key=lambda h: h.pos[1]).id
+    """Lowest-cost sequence of handholds from a start hold to the finish (highest).
 
-    # edges: holds within one hand-move, biased upward (allow slight down for traverses)
+    Start: given, or any hold the climber can grab while standing on the lowest hold
+    (within foot_from_hand above it) — the lowest hold is usually a foothold.
+    If the finish is out of reach, returns the path to the highest reachable hold.
+    """
+    by_id = {h.id: h for h in holds}
+    finish = finish_id or max(holds, key=lambda h: h.pos[1]).id
+    if start_id:
+        starts = [start_id]
+    else:
+        floor = min(h.pos[1] for h in holds)
+        starts = [h.id for h in holds if h.pos[1] - floor <= reach.foot_from_hand and h.id != finish]
+        starts = starts or [min(holds, key=lambda h: h.pos[1]).id]
+
+    # edges: holds within one hand-move; mostly upward, small drops allowed (traverses)
     adj: dict[str, list[tuple[float, str]]] = {h.id: [] for h in holds}
     for a in holds:
         for b in holds:
             if a.id == b.id:
                 continue
             d = float(np.linalg.norm(b.pos - a.pos))
-            if d <= reach.hand_move and (b.pos[1] - a.pos[1]) >= -0.15:
+            if d <= reach.hand_move and (b.pos[1] - a.pos[1]) >= -MAX_DROP:
                 adj[a.id].append((_cost(a, b, reach), b.id))
 
-    # Dijkstra
+    # Dijkstra from every start hold at once
     dist = {h.id: float("inf") for h in holds}
     prev: dict[str, str | None] = {h.id: None for h in holds}
-    dist[start] = 0.0
-    pq = [(0.0, start)]
+    pq = []
+    for s in starts:
+        dist[s] = 0.0
+        pq.append((0.0, s))
+    heapq.heapify(pq)
     while pq:
         d, u = heapq.heappop(pq)
         if u == finish:
@@ -129,24 +147,10 @@ def plan_hand_path(holds: list[Hold], reach: Reach,
                 prev[v] = u
                 heapq.heappush(pq, (nd, v))
 
-    if dist[finish] == float("inf"):
-        # unreachable with this reach → return the greedy upward chain we can make
-        path = [start]
-        cur = start
-        seen = {start}
-        while True:
-            nxts = [(w, v) for w, v in adj[cur] if v not in seen]
-            if not nxts:
-                break
-            _, nv = min(nxts)
-            path.append(nv)
-            seen.add(nv)
-            cur = nv
-            if cur == finish:
-                break
-        return path
-
-    path = [finish]
+    target = finish
+    if dist[finish] == float("inf"):  # out of reach → go as high as possible
+        target = max((h for h in holds if dist[h.id] < float("inf")), key=lambda h: (h.pos[1], -dist[h.id])).id
+    path = [target]
     while prev[path[-1]] is not None:
         path.append(prev[path[-1]])
     return list(reversed(path))

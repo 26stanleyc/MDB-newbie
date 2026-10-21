@@ -20,12 +20,15 @@ Everything runs **from this parent folder** with the venv at `./.venv` (Python 3
 ```bash
 ./.venv/bin/python backend/scripts/evaluate_quality.py          # M7 validation
 ./.venv/bin/python backend/scripts/evaluate_places.py           # M8 (12 behavioral checks)
-PYTORCH_ENABLE_MPS_FALLBACK=1 ./.venv/bin/python backend/scripts/train_holds.py --epochs 60   # M9 (~25 min MPS)
 PYTORCH_ENABLE_MPS_FALLBACK=1 ./.venv/bin/python backend/scripts/evaluate_holds.py            # M9 AP50 / IoU
 ./.venv/bin/python backend/scripts/evaluate_routes.py           # M10 color purity
 ./.venv/bin/python backend/scripts/validate_depth_synthetic.py  # M11 geometry (14 synthetic checks)
 ./.venv/bin/python backend/scripts/build_grasp.py --stems 0075 0917
 ./.venv/bin/python backend/scripts/plan_beta.py --stem 0075     # M12 beta planner
+./.venv/bin/python backend/scripts/evaluate_pipeline.py          # all stages, held-out split → backend/eval/metrics_test.json
+./.venv/bin/python backend/scripts/build_color_refs.py           # rebuild hold-color k-NN refs after labeling routes
+PYTORCH_ENABLE_MPS_FALLBACK=1 ./.venv/bin/python backend/scripts/train_holds.py --split train --out backend/artifacts/m9_train_split.pt   # model for evaluation
+PYTORCH_ENABLE_MPS_FALLBACK=1 ./.venv/bin/python backend/scripts/train_holds.py --split all    # the app's model (~70 min MPS)
 ```
 
 Backend server (the app talks to this; it also needs `npx expo start` in `rc/`):
@@ -34,9 +37,12 @@ Backend server (the app talks to this; it also needs `npx expo start` in `rc/`):
 PYTORCH_ENABLE_MPS_FALLBACK=1 ./.venv/bin/uvicorn --app-dir backend server.app:app --host 0.0.0.0 --port 8000
 ```
 
-There is no unit-test suite — each milestone's `scripts/evaluate_*.py` / `validate_*.py` is its verification; run the relevant one before calling backend work done. Usage for every script is in its module docstring.
+There is no unit-test suite. **`scripts/evaluate_pipeline.py` is the main check**: it scores detection → colors → planner → end-to-end on the held-out split with the server's own code and writes `backend/eval/metrics_test.json`; compare against the committed numbers before claiming an improvement. Per-milestone `scripts/evaluate_*.py` / `validate_*.py` remain for their stages (`evaluate_routes.py`'s purity/completeness can be maxed by merging all colors — don't optimize it). Usage for every script is in its module docstring.
 
-`backend/requirements.txt` only lists numpy + opencv; the venv actually also has torch/torchvision, scikit-learn, transformers, diffusers, trimesh, matplotlib. Add deps there when you rely on them.
+Evaluation rules (so results stay honest as data grows):
+- Splits come from `pipeline/splits.py`: gyms `sm` + `bh-phone` held out entirely, other images hashed 75/25. Never tune on the test split — choose settings by leave-one-image-out on train, then report test once.
+- `backend/eval/route_colors.json` is hand-labeled route color ground truth (several names = ambiguous). Color naming is k-NN against these labels (`pipeline/routes.py` `ColorNamer`); the evaluator builds its references from train images only.
+- Shipping: after evaluating, retrain on everything (`train_holds.py --split all`) and rebuild colors (`build_color_refs.py`).
 
 Frontend (inside `rc/`): `npx expo start`, `npx tsc --noEmit`, `npx expo lint`, `npx expo start --web` for browser debugging.
 
@@ -60,9 +66,10 @@ Key known limits (details in PROGRESS.md): dataset images have no EXIF/gravity, 
 
 ## Data
 
-- `data/{bh,bh-phone,sm}/` — gym photos with VIA polygon annotations (`data/*-annotation.{csv,json}`, holds + volumes, some `route_id`s). Only **19 images are densely labeled** (bh 15, sm 2, bh-phone 2). Splits: train/val = `bh`; cross-gym test = `sm` + `bh-phone`. `bh` (1,061 images) is a gym walk-around, so many walls have multiple views.
+- `data/{bh,bh-phone,sm}/` — gym photos with VIA polygon annotations (`data/*-annotation.{csv,json}`, holds + volumes, some `route_id`s). Only **19 images are densely labeled** (bh 15, sm 2, bh-phone 2). Splits: see `pipeline/splits.py` (test = `sm`, `bh-phone`, and ~25% of other gyms' images by hash). `bh` (1,061 images) is a gym walk-around, so many walls have multiple views.
 - `data/model/` — pre-trained Detectron2 hold model + triplet network (unused; M9 replaced Detectron2).
 - `data.py` downloads the same dataset from Kaggle via `kagglehub`.
+- **Adding data:** put images in `data/<gym>/` with a VIA export `data/<gym>-annotation.csv` (polygon regions; `hold_type` hold/volume; optional `route_id`). Training, color references and evaluation pick up every `*-annotation.csv` automatically. For color ground truth, add the route colors to `backend/eval/route_colors.json` (key `"<gym>/<file>"`).
 
 ## Legacy / scratch at the root
 

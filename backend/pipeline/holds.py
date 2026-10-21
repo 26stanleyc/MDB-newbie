@@ -31,6 +31,7 @@ EVAL_MAX_SIDE = 1333
 class Instance:
     points: np.ndarray  # (K, 2) float32, image pixels
     label: int
+    route_id: str | None = None  # VIA route_id, where labeled
 
 
 @dataclass
@@ -66,7 +67,9 @@ def load_via_index(data_dir: str, gyms: list[str]) -> list[Sample]:
                 continue
             label = LABEL_IDS.get(attrs.get("hold_type", "hold"), 1)
             pts = np.stack([xs, ys], axis=1).astype("float32") * ANNOTATION_SCALE.get(gym, 1.0)
-            by_file.setdefault(row["filename"], []).append(Instance(pts, label))
+            rid = attrs.get("route_id")
+            by_file.setdefault(row["filename"], []).append(
+                Instance(pts, label, str(rid) if rid not in ("", None) else None))
         for fname, insts in by_file.items():
             path = os.path.join(data_dir, gym, fname)
             if os.path.exists(path):
@@ -109,32 +112,53 @@ def _target_from_instances(
 
 
 class HoldDataset(torch.utils.data.Dataset):
-    def __init__(self, samples: list[Sample], train: bool, crop: int = 1024, seed: int = 0):
+    """Train mode: random crops at a random scale around the app's working resolution
+    (inference runs on images downscaled to EVAL_MAX_SIDE, so holds must be seen at
+    that size), plus flips and lighting jitter. `repeats` crops per image per epoch."""
+
+    def __init__(self, samples: list[Sample], train: bool, crop: int = 800, seed: int = 0,
+                 scale_range: tuple[float, float] = (0.7, 2.0), repeats: int = 1):
         self.samples = samples
         self.train = train
         self.crop = crop
+        self.scale_range = scale_range  # relative to the working (inference) resolution
+        self.repeats = repeats if train else 1
         self.rng = random.Random(seed)
 
     def __len__(self) -> int:
-        return len(self.samples)
+        return len(self.samples) * self.repeats
+
+    def _jitter(self, rgb: np.ndarray) -> np.ndarray:
+        """Brightness / contrast / saturation jitter — gyms are dim and unevenly lit."""
+        out = rgb.astype(np.float32)
+        out = (out - 128) * self.rng.uniform(0.7, 1.3) + 128 + self.rng.uniform(-30, 30)
+        gray = out.mean(axis=2, keepdims=True)
+        out = gray + (out - gray) * self.rng.uniform(0.7, 1.3)
+        return np.clip(out, 0, 255).astype(np.uint8)
 
     def _load_rgb(self, path: str) -> np.ndarray:
         bgr = cv2.imread(path)
         return cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
 
     def __getitem__(self, i: int):
+        i = i % len(self.samples)
         for _ in range(8):  # retry until a crop contains instances
             s = self.samples[i]
             img = self._load_rgb(s.path)
             h, w = img.shape[:2]
 
             if self.train:
+                r = min(1.0, EVAL_MAX_SIDE / max(h, w) * self.rng.uniform(*self.scale_range))
+                if r < 1.0:
+                    img = cv2.resize(img, (round(w * r), round(h * r)), interpolation=cv2.INTER_AREA)
+                h, w = img.shape[:2]
                 c = min(self.crop, h, w)
-                anchor = self.rng.choice(s.instances).points.mean(0)
+                anchor = self.rng.choice(s.instances).points.mean(0) * r
                 ox = int(np.clip(anchor[0] - c / 2 + self.rng.randint(-c // 4, c // 4), 0, max(0, w - c)))
                 oy = int(np.clip(anchor[1] - c / 2 + self.rng.randint(-c // 4, c // 4), 0, max(0, h - c)))
                 crop_img = img[oy:oy + c, ox:ox + c]
-                target = _target_from_instances(s.instances, ox, oy, 1.0, crop_img.shape[1], crop_img.shape[0])
+                target = _target_from_instances(s.instances, ox / r, oy / r, r, crop_img.shape[1], crop_img.shape[0])
+                crop_img = self._jitter(crop_img)
                 if target is None:
                     i = self.rng.randrange(len(self.samples))
                     continue

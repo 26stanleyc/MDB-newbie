@@ -301,7 +301,7 @@ def corrections(scan_id: str, body: CorrectionsBody, request: Request) -> dict:
                     "longPx": max(abs(br["x"] - tl["x"]) * W, abs(br["y"] - tl["y"]) * H),
                     "kind": "hold",
                 }
-        scan["routes"] = group_routes(scan["holds"], scan_id, scan["routes"])
+        scan["routes"] = group_routes(scan["holds"], scan_id, scan["routes"], scan["geom"], scan["imageSize"])
         _save_scan(scan)
         _log(scan_id, "hold_corrections", {"corrections": body.corrections})
     return _public(scan, request)

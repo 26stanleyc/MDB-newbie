@@ -14,6 +14,10 @@ Robustness tricks:
 
 from __future__ import annotations
 
+import json
+import os
+from collections import Counter
+
 import cv2
 import numpy as np
 
@@ -121,3 +125,105 @@ def classify_and_group(
     names = [cluster_name[c] for c in clusters]
     order = {n: i for i, n in enumerate(dict.fromkeys(names))}
     return names, [order[n] for n in names]
+
+
+# --- Learned color naming (2026-10-20) -------------------------------------------
+# Hand-set palette hues don't match what gym photos record (dim light; orange holds
+# land at the palette's "red" hue), and dark holds lose so much chroma they read as
+# black. So: normalize exposure per image, measure chroma *relative to lightness*,
+# and name each hold by its nearest labeled examples (k-NN). The reference set is
+# built from every labeled route (backend/eval/route_colors.json), so it improves as
+# labeled data is added — no thresholds to retune. Cross-validated on training images
+# (leave-one-image-out): route color accuracy 0.80 vs 0.41 for the palette rule.
+
+_BACKEND = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+COLOR_REFS_PATH = os.path.join(_BACKEND, "artifacts", "color_refs.npz")
+COLOR_LABELS_PATH = os.path.join(_BACKEND, "eval", "route_colors.json")
+KNN_K = 7
+L_WEIGHT = 0.5
+
+
+def linear_exposure(img_bgr: np.ndarray, holds_mask: np.ndarray) -> np.ndarray:
+    """Linear-light image scaled so the holds' bright end (p95 of max channel) = 0.8."""
+    f = img_bgr.astype(np.float32) / 255.0
+    lin = np.where(f <= 0.04045, f / 12.92, ((f + 0.055) / 1.055) ** 2.4)
+    if holds_mask.any():
+        p95 = np.percentile(lin[holds_mask].max(axis=1), 95)
+        lin = lin * (0.8 / max(float(p95), 1e-4))
+    return lin
+
+
+def hold_lab(lin: np.ndarray, mask: np.ndarray) -> np.ndarray | None:
+    """Robust hold color as float CIELAB (L 0–100): erode the edge, trim the
+    darkest/brightest pixels (shadow/chalk), median, back to sRGB → Lab."""
+    m = mask.astype(np.uint8)
+    k = max(1, int(round(np.sqrt(m.sum()) * 0.15)))
+    e = cv2.erode(m, np.ones((k, k), np.uint8)).astype(bool)
+    px = lin[e if e.sum() >= 20 else mask.astype(bool)]
+    if len(px) == 0:
+        return None
+    mx = px.max(axis=1)
+    lo, hi = np.percentile(mx, [15, 90])
+    sel = (mx >= lo) & (mx <= hi)
+    if sel.sum() >= 10:
+        px = px[sel]
+    c = np.clip(np.median(px, axis=0), 0, 1)
+    srgb = np.where(c <= 0.0031308, 12.92 * c, 1.055 * c ** (1 / 2.4) - 0.055)
+    return cv2.cvtColor(srgb[None, None].astype(np.float32), cv2.COLOR_BGR2LAB)[0, 0]
+
+
+def color_features(lab: np.ndarray) -> np.ndarray:
+    """Lightness (down-weighted) + chroma relative to lightness, so a dark red hold
+    keeps its 'redness' instead of collapsing toward black."""
+    L, a, b = lab
+    s = max(float(L), 5.0) / 50.0
+    return np.array([L * L_WEIGHT, a / s, b / s], np.float32)
+
+
+class ColorNamer:
+    """k-NN over labeled hold colors."""
+
+    def __init__(self, feats: np.ndarray, names: np.ndarray, k: int = KNN_K):
+        self.feats, self.names, self.k = feats, names, k
+
+    def name(self, lab: np.ndarray) -> str:
+        d = np.linalg.norm(self.feats - color_features(lab), axis=1)
+        nearest = self.names[np.argsort(d)[: self.k]]
+        return Counter(nearest.tolist()).most_common(1)[0][0]
+
+    def save(self, path: str = COLOR_REFS_PATH) -> None:
+        np.savez(path, feats=self.feats, names=self.names)
+
+    @classmethod
+    def load(cls, path: str = COLOR_REFS_PATH) -> "ColorNamer | None":
+        if not os.path.exists(path):
+            return None
+        d = np.load(path)
+        return cls(d["feats"], d["names"])
+
+    @classmethod
+    def from_samples(cls, samples, working_image, labels_path: str = COLOR_LABELS_PATH) -> "ColorNamer":
+        """Build the reference set from labeled routes in `samples` (pipeline.holds.Sample)."""
+        labels = json.load(open(labels_path))
+        feats, names = [], []
+        for s in samples:
+            routes = labels.get(f"{s.gym}/{os.path.basename(s.path)}")
+            if not routes:
+                continue
+            bgr = cv2.imread(s.path)
+            img = working_image(bgr)
+            scale = img.shape[1] / bgr.shape[1]
+            masks = []
+            for inst in s.instances:
+                m = np.zeros(img.shape[:2], np.uint8)
+                cv2.fillPoly(m, [np.round(inst.points * scale).astype(np.int32)], 1)
+                masks.append(m.astype(bool))
+            lin = linear_exposure(img, np.any(masks, axis=0))
+            for inst, m in zip(s.instances, masks):
+                if inst.route_id in routes and m.any():
+                    lab = hold_lab(lin, m)
+                    if lab is not None:
+                        feats.append(color_features(lab))
+                        names.append(routes[inst.route_id][0])  # first = best-guess name
+        return cls(np.array(feats, np.float32), np.array(names))
+

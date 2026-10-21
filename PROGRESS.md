@@ -27,8 +27,8 @@ summarized in the status table; details follow per milestone. Design authority i
 | M6 Polish + accessibility | 1 | ✅ Done | tsc + lint + iOS bundle + expo-doctor (21/21) |
 | M7 Image quality check | 2 | ✅ Done | 98.9% pass on 180 real photos; degradations caught |
 | M8 Place matching | 2 | ✅ Done | 12/12 behavioral tests |
-| M9 Hold detection/segmentation | 2 | ✅ Done | own Mask R-CNN (MPS): AP50 84.0, mean IoU 0.88 cross-gym (corrected 2026-10-20; was 29.4 due to a label bug) |
-| M10 Route grouping by color | 2 | ✅ Done | per-route color purity 0.78 (cluster-then-name) |
+| M9 Hold detection/segmentation | 2 | ✅ Done | own Mask R-CNN (MPS), v2 2026-10-20: AP50 81.1 sm / 98.4 bh-phone (unseen gyms), see `backend/eval/metrics_test.json` |
+| M10 Route grouping by color | 2 | ✅ Done | route color accuracy 0.625 on test (k-NN on labeled colors, 2026-10-20; old palette rule 0.375) |
 | M11 Hold depth dataset (DA3) | 2 | ✅ Built + run on real DA3 depth | 1,691 records; footprints plausible; protrusion needs per-hold crops |
 
 Verification convention: every milestone is checked against the doc's "done
@@ -621,4 +621,49 @@ Upload `run_dust3r.py` + a zip of same-wall views, run on a GPU, get the fold an
   numbered moves. ~1.2 s per scan on MPS after model load. **Not yet verified on a phone**
   (React Native multipart upload path). Visible weakness on 0917: wall-panel edges and
   shadows detected as holds (Phase 1 hard negatives).
+- **2026-10-20 (upload a photo)** — Camera screen gains a photo-library button left of the
+  shutter (quick: 1 photo → preview; precise: fills the remaining views), plus "Upload a
+  photo" on the camera-permission screen so the app works without a camera (incl. web).
+  `src/lib/pick-photos.ts` (expo-image-picker) keeps EXIF focal length; no gravity for
+  uploads (CaptureMeta allows that). Also stopped the web-only DeviceMotion subscribe error
+  from surfacing as a dev overlay. Verified on web: upload → preview → gym search → quality
+  → server scan (80 holds, 7 routes, 1.5 s) → results. Library button beside the live
+  camera not yet seen on a phone.
+- **2026-10-20 (pipeline evaluation + improvements)** — New `scripts/evaluate_pipeline.py`
+  scores every stage on a held-out split with the server's own code
+  (`backend/eval/baseline_test.json` → `metrics_test.json`). Split rule in
+  `pipeline/splits.py` (sm + bh-phone held out; other gyms hashed 75/25 — new images
+  are assigned automatically). Route-color ground truth hand-labeled for all 69
+  routes (`backend/eval/route_colors.json`) because the old purity/completeness metric
+  is maximized by merging everything into one color — the real baseline color accuracy
+  was **0.375**, not "0.78 purity". All choices made by leave-one-image-out on train;
+  test reported once.
+
+  | Stage (test split) | Baseline | Now |
+  |---|---|---|
+  | Detection AP50, unseen gym sm / bh-phone | 76.7 / 96.8 | **81.1 / 98.4** |
+  | Detection recall @0.5, sm (small holds) | 0.73 (0.53) | **0.80 (0.65)** |
+  | Detection strict mask AP (all test) | 67.9 | 64.0 (outlines slightly looser) |
+  | Route color accuracy (labeled holds) | 0.375 | **0.625** |
+  | Hold color accuracy | 0.36 | **0.52** |
+  | Planner reaches top of route | 0.62 | **0.73** |
+  | Taller climber never needs more moves | 0.80 | **0.90** |
+  | Stance balance / feet per hand move | 0.61 / 0.43 | **0.82 / 0.81** |
+  | End-to-end route IoU / routes recovered | 0.27 / 0.13 | **0.36 / 0.17** |
+
+  Changes: (1) detector training samples crops at the app's working scale
+  (0.7–2× of the 1333-px inference size — old training saw holds ~1.8× larger than at
+  inference) + lighting jitter + 6 crops/image/epoch, split-aware, all gyms;
+  (2) colors named by k-NN over labeled holds in an exposure-normalized,
+  lightness-relative chroma space (`ColorNamer`; LOO route accuracy 0.80 vs 0.41 palette);
+  wall-based white balance and in-photo cluster voting were tried and *hurt* in LOO;
+  (3) same-color routes split by 1.2 m reach linkage (one route per color merged
+  separate climbs); merging small fragments was tried and hurt; (4) planner: start from
+  any hold reachable while standing on the lowest hold, traverses (≤0.4 m down), a
+  fixed per-move effort cost, best partial path when the top is out of reach.
+  App model retrained on all data (`m9_maskrcnn.pt`; v1 kept as `m9_maskrcnn_v1.pt`);
+  color refs rebuilt from all labels. **Biggest remaining gap: colors on unseen walls
+  (0.53 of found holds) — more labeled routes feed the k-NN directly.** Planner
+  metrics are sanity checks only — no ground-truth beta exists yet; its moves
+  (~2–3 per route) look long vs. real climbing, reach model unvalidated.
 - **(earlier)** — Built and verified Phase 1 M0–M6.

@@ -5,6 +5,13 @@ Written 2026-10-20 from an honest audit of what works. Progress on each item goe
 
 ## Where things stand
 
+> **Update 2026-10-20 — measured end to end** (`backend/scripts/evaluate_pipeline.py`,
+> numbers in `backend/eval/metrics_test.json`, before/after in PROGRESS.md). Detection is
+> good on unseen gyms (AP50 81–98); **route colors are now the weakest stage** (0.53 of
+> found holds named right on unseen walls) and limit end-to-end route recovery (0.17).
+> More labeled routes (add colors to `backend/eval/route_colors.json`) improve colors
+> directly with no retuning. The planner still has no ground truth (Phase 0a).
+
 - **The app runs on a mock API.** Every scan result, route, and path in the app is a
   fixture. The real pipeline is offline scripts in `backend/`; nothing is wired up.
 - **Hold detection is better than we thought.** The old "mask AP50 29.4" was an
