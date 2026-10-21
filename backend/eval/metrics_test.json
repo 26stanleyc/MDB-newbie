@@ -1,6 +1,6 @@
 {
-  "run": "v2 detector (train split) + knn colors + route split + planner v2",
-  "date": "2026-10-20T17:30:56",
+  "run": "v2 detector + knn colors (route + mosaic hold labels) + route split + planner v2 + tap-to-pick",
+  "date": "2026-10-20T21:05:12",
   "ckpt": "backend/artifacts/m9_train_split.pt",
   "split": "test",
   "images": 8,
@@ -44,8 +44,14 @@
   },
   "colors_on_labeled_holds": {
     "routes": 24,
-    "hold_color_accuracy": 0.515,
+    "hold_color_accuracy": 0.54,
     "route_color_accuracy": 0.625
+  },
+  "colors_on_hold_labels": {
+    "mosaic": {
+      "holds": 132,
+      "hold_color_accuracy": 0.955
+    }
   },
   "planner_on_labeled_routes": {
     "routes": 20,
@@ -62,19 +68,21 @@
   "end_to_end": {
     "routes": 24,
     "route_holds_found": 0.877,
-    "found_holds_color_ok": 0.531,
-    "mean_route_IoU": 0.355,
-    "routes_recovered": 0.167,
+    "found_holds_color_ok": 0.559,
+    "mean_route_IoU": 0.429,
+    "tap_start_route_IoU": 0.388,
+    "tap_start_IoU>=0.5": 0.417,
+    "routes_recovered": 0.292,
     "planner_on_recovered_routes": {
-      "routes": 3,
-      "reached_top": 0.778,
-      "taller_never_more_moves": 0.667,
+      "routes": 5,
+      "reached_top": 0.867,
+      "taller_never_more_moves": 0.8,
       "mean_moves_by_height": {
-        "155": 2.33,
-        "170": 2.0,
-        "185": 2.67
+        "155": 2.8,
+        "170": 2.4,
+        "185": 2.6
       },
-      "mean_stability": 0.895,
+      "mean_stability": 0.913,
       "feet_per_hand_move": 1.0
     }
   }

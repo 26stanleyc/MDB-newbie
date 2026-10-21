@@ -41,7 +41,7 @@ There is no unit-test suite. **`scripts/evaluate_pipeline.py` is the main check*
 
 Evaluation rules (so results stay honest as data grows):
 - Splits come from `pipeline/splits.py`: gyms `sm` + `bh-phone` held out entirely, other images hashed 75/25. Never tune on the test split — choose settings by leave-one-image-out on train, then report test once.
-- `backend/eval/route_colors.json` is hand-labeled route color ground truth (several names = ambiguous). Color naming is k-NN against these labels (`pipeline/routes.py` `ColorNamer`); the evaluator builds its references from train images only.
+- `backend/eval/route_colors.json` is hand-labeled route color ground truth (several names = ambiguous); `backend/eval/hold_colors.json` holds per-hold color labels for gyms without route annotations (currently `data/mosaic/`, which must exist locally). Color naming is k-NN against these labels (`pipeline/routes.py` `ColorNamer`); the evaluator builds its references from train images only.
 - Shipping: after evaluating, retrain on everything (`train_holds.py --split all`) and rebuild colors (`build_color_refs.py`).
 
 Frontend (inside `rc/`): `npx expo start`, `npx tsc --noEmit`, `npx expo lint`, `npx expo start --web` for browser debugging.

@@ -74,7 +74,7 @@ Target: AP50 ≥ 80 on the **enlarged** cross-gym test set, small-hold recall re
 2. **Use the unused triplet network** (`data/model/triplet_network_final.pt`) as a
    hold-appearance embedding.
 3. **Spatial prior** — split same-color clusters by position; detect start tape.
-4. **Tap-to-pick UX** — user taps a start hold, route is grown from it; corrections are labels.
+4. **Tap-to-pick UX** — user taps a start hold, route is grown from it; corrections are labels. ✅ *Done 2026-10-21* (`scan/pick-route.tsx`, one-tap IoU 0.39 on test).
 
 Target: per-route purity 0.78 → 0.90; % of routes exactly recovered after one tap.
 

@@ -45,9 +45,9 @@ sys.path.insert(0, BACKEND)
 
 from pipeline.beta import Hold as BetaHold, plan_beta  # noqa: E402
 from pipeline.holds import build_model, load_via_index  # noqa: E402
-from pipeline.routes import ColorNamer  # noqa: E402
+from pipeline.routes import ColorNamer, hold_label_features  # noqa: E402
 from pipeline.scan import (  # noqa: E402
-    MAX_DETECTIONS, SCORE_MIN, build_scan, detection_from_mask, meters_per_pixel, working_image,
+    MAX_DETECTIONS, SCORE_MIN, build_scan, detection_from_mask, meters_per_pixel, suggest_route, working_image,
 )
 from pipeline.splits import all_gyms, split_of  # noqa: E402
 
@@ -200,6 +200,8 @@ def main() -> int:
     ap.add_argument("--out", default=None, help="metrics JSON (default backend/eval/metrics_<split>.json)")
     ap.add_argument("--label", default="", help="free-text name for this run")
     ap.add_argument("--palette-colors", action="store_true", help="old palette color rule (baseline)")
+    ap.add_argument("--no-hold-labels", action="store_true",
+                    help="color references from route labels only (before hold_colors.json)")
     args = ap.parse_args()
 
     colors_gt = json.load(open(os.path.join(EVAL, "route_colors.json")))
@@ -213,14 +215,17 @@ def main() -> int:
     everything = load_via_index(DATA, all_gyms(DATA))
     samples = [s for s in everything if args.split == "all" or split_of(s.gym, s.path) == args.split]
     # Color references from TRAINING images only, so test colors are never seen.
+    in_train = lambda key: split_of(*key.split("/", 1)) == "train"  # noqa: E731
     namer = False if args.palette_colors else ColorNamer.from_samples(
         [s for s in everything if split_of(s.gym, s.path) == "train"], working_image)
+    if namer and not args.no_hold_labels:
+        namer = namer.merged(ColorNamer.from_hold_labels(DATA, working_image, keep=in_train))
     print(f"{len(samples)} images in split '{args.split}': "
           + ", ".join(f"{g}={n}" for g, n in Counter(s.gym for s in samples).items()))
 
     det_all, det_by_gym = DetAccumulator(), defaultdict(DetAccumulator)
     color = Counter()
-    plans_gt, plans_e2e, e2e_ious = [], [], []
+    plans_gt, plans_e2e, e2e_ious, tap_ious = [], [], [], []
     e2e = Counter()
 
     for s in samples:
@@ -303,11 +308,31 @@ def main() -> int:
                 if iou > best_iou:
                     best, best_iou = r, iou
             e2e_ious.append(best_iou)
+            # Tap-to-pick: the climber taps the route's start (its lowest labeled hold
+            # that was detected) and gets suggest_route's holds.
+            det_of = {g: k for k, g in enumerate(det_gt) if g >= 0}
+            found_members = [i for i in members if i in det_of]
+            if found_members:
+                start_gt = max(found_members, key=lambda i: s.instances[i].points[:, 1].max())
+                start = scan["holds"][det_of[start_gt]]["id"]
+                P = [det_gt[k_of[h]] for h in suggest_route(scan["holds"], scan["geom"], scan["imageSize"], start)]
+                inter = sum(1 for g in P if g in G)
+                tap_ious.append(inter / (len(P) + len(G) - inter))
             if best is not None and best_iou >= 0.5 and best["color"] in ok:
                 e2e["routes_recovered"] += 1
                 pm = plan_metrics(best["holdIds"], scan["geom"], scan["imageSize"])
                 if pm:
                     plans_e2e.append(pm)
+
+    # Per-hold color labels (hold_colors.json — gyms without route annotations).
+    hold_col = defaultdict(Counter)
+    if namer:
+        keep = (lambda key: True) if args.split == "all" else (lambda key: split_of(*key.split("/", 1)) == args.split)
+        for key, f, name in hold_label_features(DATA, working_image, keep):
+            pred = Counter(namer.names[np.argsort(np.linalg.norm(namer.feats - f, axis=1))[: namer.k]].tolist()).most_common(1)[0][0]
+            g = key.split("/", 1)[0]
+            hold_col[g]["n"] += 1
+            hold_col[g]["ok"] += pred == name
 
     metrics = {
         "run": args.label, "date": datetime.now().isoformat(timespec="seconds"),
@@ -319,12 +344,16 @@ def main() -> int:
             "hold_color_accuracy": round(color["holds_correct"] / max(1, color["holds"]), 3),
             "route_color_accuracy": round(color["routes_correct"] / max(1, color["routes"]), 3),
         },
+        "colors_on_hold_labels": {g: {"holds": c["n"], "hold_color_accuracy": round(c["ok"] / c["n"], 3)}
+                                  for g, c in sorted(hold_col.items())},
         "planner_on_labeled_routes": summarize_plans(plans_gt),
         "end_to_end": {
             "routes": e2e["routes"],
             "route_holds_found": round(e2e["route_holds_found"] / max(1, e2e["route_holds"]), 3),
             "found_holds_color_ok": round(e2e["route_holds_found_color_ok"] / max(1, e2e["route_holds_found"]), 3),
             "mean_route_IoU": round(float(np.mean(e2e_ious)) if e2e_ious else 0.0, 3),
+            "tap_start_route_IoU": round(float(np.mean(tap_ious)) if tap_ious else 0.0, 3),
+            "tap_start_IoU>=0.5": round(float(np.mean([i >= 0.5 for i in tap_ious])) if tap_ious else 0.0, 3),
             "routes_recovered": round(e2e["routes_recovered"] / max(1, e2e["routes"]), 3),
             "planner_on_recovered_routes": summarize_plans(plans_e2e),
         },

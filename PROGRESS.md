@@ -681,4 +681,21 @@ Upload `run_dust3r.py` + a zip of same-wall views, run on a GPU, get the fold an
   unchanged. **Not validated:** quality has no ground truth; absolute wall angles need
   a real phone photo (dataset/uploads have no gravity) — sign convention checked
   against Marigold docs (x right, y up, z toward camera) and with simulated tilt.
+- **2026-10-21 (Mosaic gym colors + tap-to-pick routes)** — 14 bright Mosaic-gym photos
+  (`data/mosaic/m00–m13`, from `Mosaic_walls/` + the user's upload) labeled for hold
+  color: detector outlines → per-photo look-alike clusters → each clean cluster named
+  by eye, mixed ones skipped → **1,102 labeled holds** in `backend/eval/hold_colors.json`
+  (all detections listed; `color: null` = unlabeled, still used for exposure). k-NN color
+  references now include them (`ColorNamer.from_hold_labels`). Held-out Mosaic photos
+  (m06, m10; 132 holds): hold color accuracy **0.841 → 0.955**; bh test route colors
+  unchanged (0.625), bh hold colors 0.515 → 0.54, end-to-end route IoU 0.355 → 0.429.
+  Caveats: test photos are the same gym (learning a gym from its own labels, not unseen-gym
+  generalization), and clean clusters are the easier holds, so 0.955 is optimistic.
+  **Tap-to-pick routes:** `scan.suggest_route` (same color, chained ≤1.2 m, within 0.6 m
+  below / 1.25 m beside the start — limits chosen on train, flat in 0.49–0.53 IoU);
+  endpoints `POST /scans/{id}/routes/suggest` and `POST /scans/{id}/routes` (custom routes
+  kept through corrections, logged to `custom_routes.jsonl` = labeled route data); app
+  screen `scan/pick-route.tsx` (entry "Tap to pick" on results). Test split: one-tap route
+  IoU 0.388, 42% ≥ 0.5 — a starting point the climber edits, not a big accuracy gain.
+  Verified in the web app: tap start → 7-hold suggestion → remove → save → path.
 - **(earlier)** — Built and verified Phase 1 M0–M6.

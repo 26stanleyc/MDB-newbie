@@ -139,6 +139,7 @@ def classify_and_group(
 _BACKEND = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 COLOR_REFS_PATH = os.path.join(_BACKEND, "artifacts", "color_refs.npz")
 COLOR_LABELS_PATH = os.path.join(_BACKEND, "eval", "route_colors.json")
+HOLD_COLORS_PATH = os.path.join(_BACKEND, "eval", "hold_colors.json")  # per-hold labels, gyms without routes
 KNN_K = 7
 L_WEIGHT = 0.5
 
@@ -226,4 +227,44 @@ class ColorNamer:
                         feats.append(color_features(lab))
                         names.append(routes[inst.route_id][0])  # first = best-guess name
         return cls(np.array(feats, np.float32), np.array(names))
+
+    def merged(self, other: "ColorNamer") -> "ColorNamer":
+        return ColorNamer(np.concatenate([self.feats, other.feats]), np.concatenate([self.names, other.names]), self.k)
+
+    @classmethod
+    def from_hold_labels(cls, data_dir: str, working_image, keep=lambda key: True,
+                         path: str = HOLD_COLORS_PATH) -> "ColorNamer":
+        """Reference set from per-hold color labels (backend/eval/hold_colors.json)."""
+        feats, names = [], []
+        for _key, f, name in hold_label_features(data_dir, working_image, keep, path):
+            feats.append(f)
+            names.append(name)
+        return cls(np.array(feats, np.float32).reshape(-1, 3), np.array(names))
+
+
+def hold_label_features(data_dir: str, working_image, keep=lambda key: True, path: str = HOLD_COLORS_PATH):
+    """Yield (image key, color feature, labeled name) for every labeled hold in
+    hold_colors.json whose image key ("<gym>/<file>") passes `keep`. Exposure is
+    normalized over all listed holds of the photo, as at inference."""
+    if not os.path.exists(path):
+        return
+    for key, holds in json.load(open(path)).items():
+        if key.startswith("_") or not keep(key) or not any(h["color"] for h in holds):
+            continue
+        bgr = cv2.imread(os.path.join(data_dir, key))
+        if bgr is None:
+            continue
+        img = working_image(bgr)
+        H, W = img.shape[:2]
+        masks = []
+        for h in holds:
+            m = np.zeros((H, W), np.uint8)
+            cv2.fillPoly(m, [np.round(np.array(h["polygon"]) * [W, H]).astype(np.int32)], 1)
+            masks.append(m.astype(bool))
+        lin = linear_exposure(img, np.any(masks, axis=0))
+        for h, m in zip(holds, masks):
+            if h["color"] and m.any():
+                lab = hold_lab(lin, m)
+                if lab is not None:
+                    yield key, color_features(lab), h["color"]
 

@@ -1,6 +1,7 @@
 """Build the app's hold-color reference set (artifacts/color_refs.npz).
 
-Every labeled route in backend/eval/route_colors.json contributes its holds' colors;
+Every labeled route in backend/eval/route_colors.json and every labeled hold in
+backend/eval/hold_colors.json contributes its color;
 the server names hold colors by k-NN against these. Re-run after labeling more
 routes. --split train builds from training images only (what evaluate_pipeline.py
 uses internally, so test numbers stay honest); the default uses everything.
@@ -35,7 +36,8 @@ def main() -> int:
     data = os.path.join(ROOT, "data")
     samples = [s for s in load_via_index(data, all_gyms(data))
                if args.split == "all" or split_of(s.gym, s.path) == "train"]
-    namer = ColorNamer.from_samples(samples, working_image)
+    namer = ColorNamer.from_samples(samples, working_image).merged(ColorNamer.from_hold_labels(
+        data, working_image, keep=lambda key: args.split == "all" or split_of(*key.split("/", 1)) == "train"))
     namer.save(args.out)
     print(f"{len(namer.names)} labeled holds: {dict(Counter(namer.names.tolist()).most_common())}")
     print(f"saved {args.out}")

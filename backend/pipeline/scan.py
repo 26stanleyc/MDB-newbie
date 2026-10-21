@@ -27,6 +27,8 @@ ASSUMED_HOLD_M = 0.14      # average hold's longest side (metric scale anchor, s
 WALL_M_RANGE = (2.0, 10.0) # clamp the implied image height to something wall-sized
 FALLBACK_WALL_M = 4.5      # image height if there are too few holds to anchor on
 ROUTE_LINK_M = 1.2         # same-color holds farther apart than a tall climber's move are separate routes
+TAP_MAX_DROP_M = 0.6       # tap-to-pick: footholds may sit this far below the start hold
+TAP_MAX_SIDE_M = 1.25      # tap-to-pick: route stays within this lateral distance of the start hold
 
 _model = None
 _device = None
@@ -239,6 +241,29 @@ def _spatial_components(ids: list[str], geom: dict, image_size: list[int]) -> li
     for k, i in enumerate(ids):
         comps.setdefault(find(k), []).append(i)
     return list(comps.values())
+
+
+def suggest_route(holds: list[dict], geom: dict, image_size: list[int], start_id: str) -> list[str]:
+    """Tap-to-pick: the route most likely starting at `start_id` — holds of the same
+    color chained within ROUTE_LINK_M, staying in a corridor above the start (routes
+    go up; on a dense wall a color alone links half the wall). Start hold first."""
+    W, H = image_size
+    mpp = meters_per_pixel(geom, image_size)
+    color = next(h["color"] for h in holds if h["id"] == start_id)
+    pos = {h["id"]: np.array([geom[h["id"]]["center"]["x"] * W * mpp, (1 - geom[h["id"]]["center"]["y"]) * H * mpp])
+           for h in holds if h["color"] == color}
+    sx, sy = pos[start_id]
+    ok = {i for i, (x, y) in pos.items() if y >= sy - TAP_MAX_DROP_M and abs(x - sx) <= TAP_MAX_SIDE_M}
+    route, frontier = [start_id], [start_id]
+    seen = {start_id}
+    while frontier:
+        a = frontier.pop()
+        for b in ok - seen:
+            if np.linalg.norm(pos[a] - pos[b]) <= ROUTE_LINK_M:
+                seen.add(b)
+                route.append(b)
+                frontier.append(b)
+    return route
 
 
 def meters_per_pixel(geom: dict, image_size: list[int]) -> float:

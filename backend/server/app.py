@@ -34,7 +34,7 @@ sys.path.insert(0, BACKEND)
 
 from pipeline.places import Place, PlaceRegistry, haversine_m  # noqa: E402
 from pipeline.quality import check_image_quality  # noqa: E402
-from pipeline.scan import analyze_scan, group_routes, plan_route, process_image  # noqa: E402
+from pipeline.scan import analyze_scan, group_routes, plan_route, process_image, suggest_route  # noqa: E402
 
 STORE = os.environ.get("CAPITAN_STORE", os.path.join(BACKEND, "store"))
 SCANS_DIR = os.path.join(STORE, "scans")
@@ -219,6 +219,15 @@ class CorrectionsBody(BaseModel):
     corrections: list[dict]
 
 
+class SuggestBody(BaseModel):
+    startHoldId: str
+
+
+class RouteBody(BaseModel):
+    holdIds: list[str]
+    startHoldId: str | None = None
+
+
 class PlaceBody(BaseModel):
     name: str
     lat: float | None = None
@@ -343,10 +352,46 @@ def corrections(scan_id: str, body: CorrectionsBody, request: Request) -> dict:
                     "longPx": max(abs(br["x"] - tl["x"]) * W, abs(br["y"] - tl["y"]) * H),
                     "kind": "hold",
                 }
-        scan["routes"] = group_routes(scan["holds"], scan_id, scan["routes"], scan["geom"], scan["imageSize"])
+        alive = {h["id"] for h in scan["holds"]}
+        custom = [{**r, "holdIds": [h for h in r["holdIds"] if h in alive]} for r in scan["routes"] if r.get("custom")]
+        auto = [r for r in scan["routes"] if not r.get("custom")]
+        scan["routes"] = [r for r in custom if r["holdIds"]] + \
+            group_routes(scan["holds"], scan_id, auto, scan["geom"], scan["imageSize"])
         _save_scan(scan)
         _log(scan_id, "hold_corrections", {"corrections": body.corrections})
     return _public(scan, request)
+
+
+@app.post("/scans/{scan_id}/routes/suggest")
+def suggest(scan_id: str, body: SuggestBody) -> dict:
+    """Tap-to-pick: holds of the route that likely starts at the tapped hold."""
+    scan = _get_scan(scan_id)
+    if scan["status"] != "done":
+        raise HTTPException(409, "Scan is not done processing")
+    if body.startHoldId not in scan["geom"]:
+        raise HTTPException(404, f"Hold {body.startHoldId} not found")
+    return {"holdIds": suggest_route(scan["holds"], scan["geom"], scan["imageSize"], body.startHoldId)}
+
+
+@app.post("/scans/{scan_id}/routes")
+def create_route(scan_id: str, body: RouteBody) -> dict:
+    """Save a climber-confirmed route (from tap-to-pick). Logged as labeled route data."""
+    scan = _get_scan(scan_id)
+    colors = {h["id"]: h["color"] for h in scan["holds"]}
+    ids = [h for h in dict.fromkeys(body.holdIds) if h in colors]
+    if not ids:
+        raise HTTPException(400, "No valid holds")
+    with _lock:
+        color = max(set(colors[h] for h in ids), key=lambda c: sum(colors[h] == c for h in ids))
+        n = sum(1 for r in scan["routes"] if r.get("custom")) + 1
+        route = {"id": f"{scan_id}-custom-{n}", "color": color, "displayName": f"My route {n}",
+                 "holdIds": ids, "custom": True}
+        if body.startHoldId in ids:
+            route["startHoldId"] = body.startHoldId
+        scan["routes"].insert(0, route)
+        _save_scan(scan)
+        _log(scan_id, "custom_routes", {"route": route})
+    return route
 
 
 @app.get("/places/nearby")
