@@ -729,4 +729,23 @@ Upload `run_dust3r.py` + a zip of same-wall views, run on a GPU, get the fold an
   side (per-move cost), which the weight fit also pushed toward, but without a held-out
   gain. Remaining levers: richer features (hold types, stance balance), Claude reranking
   at request time, and real human beta to validate any of it. Total judge spend: ~$6.80.
+- **2026-10-21 (pick-your-path preference data)** — The path screen now offers 2–3
+  different betas per route ("Suggested" + styles from `scan.PATH_STYLES`: Fewer moves,
+  Shorter moves, Best holds, Straighter; only distinct ones shown) and an "I'd climb
+  this" button. `POST /scans/{id}/routes/{rid}/paths` returns the options;
+  `POST …/path-choice` logs the pick vs every other shown option with path features to
+  `path_choices.jsonl` and saves it as the climber's path ("Your path" next time).
+  `judge_paths.py fit --source human|both` trains the planner weights from these picks
+  with the same Bradley-Terry fit as Claude's judgments. Verified in the web app (Pink
+  route: 3 options → picked "Shorter moves" → logged → 2 pairs in the fit → listed first).
+  **Why "Shorter moves" needed a new feature:** every planner cost was linear in move
+  length, so no weighting could ever prefer two short moves over one long one — which
+  also explains why fitting Claude's "more, shorter moves" preference gained nothing.
+  Added `strain2` = (move/reach)² (default weight 0 → default paths unchanged). Refit on
+  the existing judgments (features recomputed from logged hands, no new API calls):
+  train CV agreement 0.66 → 0.72, but held-out test still ties (0.725 vs 0.725, the
+  same decision on all 40 pairs) — so the default planner stays hand-set; climbers'
+  picks will decide. Reach-test pairs are excluded from fitting (paths with different
+  endpoints have incomparable total costs). Options per route/climber on 3 photos:
+  1 option 17×, 2 options 34×, 3 options 1×.
 - **(earlier)** — Built and verified Phase 1 M0–M6.

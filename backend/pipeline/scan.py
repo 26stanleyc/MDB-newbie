@@ -14,7 +14,7 @@ import cv2
 import numpy as np
 import torch
 
-from .beta import Hold as BetaHold, load_weights, plan_beta
+from .beta import FEATURES, Hold as BetaHold, Reach, load_weights, path_features, plan_beta
 from .holds import EVAL_MAX_SIDE, build_model
 from .routes import ColorNamer, classify_and_group, hold_color_lab, hold_lab, linear_exposure
 
@@ -275,6 +275,53 @@ def meters_per_pixel(geom: dict, image_size: list[int]) -> float:
     mpp = ASSUMED_HOLD_M / float(np.median(sizes)) if len(sizes) >= 3 else FALLBACK_WALL_M / H
     lo, hi = WALL_M_RANGE
     return float(np.clip(mpp, lo / H, hi / H))
+
+
+# Alternative path styles for "pick the path you'd climb" (human preference data):
+# the same planner with one priority pushed hard. Multipliers on PLANNER_WEIGHTS, in
+# FEATURES order (move, dist, strain, bad_hold, down, lateral, strain2); then an added
+# amount (strain2 is 0 by default, so "shorter moves" adds it).
+PATH_STYLES = [
+    ("recommended", "Suggested", [1, 1, 1, 1, 1, 1, 1], [0, 0, 0, 0, 0, 0, 0]),
+    ("fewer", "Fewer moves", [4, 1, 0.5, 1, 1, 1, 1], [0, 0, 0, 0, 0, 0, 0]),
+    ("shorter", "Shorter moves", [0, 1, 1, 1, 1, 1, 1], [0, 0, 0, 0, 0, 0, 3]),
+    ("holds", "Best holds", [1, 1, 1, 5, 1, 1, 1], [0, 0, 0, 0, 0, 0, 0]),
+    ("straight", "Straighter", [1, 1, 1, 1, 1, 5, 1], [0, 0, 0, 0, 0, 0, 0]),
+]
+MAX_PATH_OPTIONS = 3
+
+
+def _route_holds(route: dict, geom: dict, image_size: list[int]) -> list:
+    W, H = image_size
+    mpp = meters_per_pixel(geom, image_size)
+    # x right, y up, in meters; hold quality from analyze_scan when available
+    return [BetaHold(hid, np.array([geom[hid]["center"]["x"] * W * mpp, (1 - geom[hid]["center"]["y"]) * H * mpp]),
+                     geom[hid].get("quality", 0.6)) for hid in route["holdIds"]]
+
+
+def plan_options(route: dict, geom: dict, image_size: list[int], height_cm: float, wingspan_cm: float,
+                 k: int = MAX_PATH_OPTIONS) -> list[dict]:
+    """Up to k genuinely different betas, "Suggested" (the default planner) first. Each: id, label, steps,
+    features (summed move features — what a preference fit learns from)."""
+    holds = _route_holds(route, geom, image_size)
+    if len(holds) < 2:
+        return [{"id": "recommended", "label": "Suggested", "features": [0.0] * len(FEATURES),
+                 "steps": plan_route(route, geom, image_size, height_cm, wingspan_cm)}]
+    reach = Reach.from_body(height_cm, wingspan_cm)
+    out, seen = [], set()
+    for sid, label, mult, add in PATH_STYLES:
+        w = PLANNER_WEIGHTS * np.array(mult, float) + np.array(add, float)
+        steps, _ = plan_beta(holds, height_cm, wingspan_cm, weights=w)
+        hands = tuple(s.hold_id for s in steps if s.limb in ("LH", "RH"))
+        if hands in seen:
+            continue
+        seen.add(hands)
+        out.append({"id": sid, "label": label,
+                    "steps": [{"order": s.order, "holdId": s.hold_id, "limb": s.limb} for s in steps],
+                    "features": [round(float(x), 4) for x in path_features(list(hands[1:]), holds, reach)]})
+        if len(out) == k:
+            break
+    return out
 
 
 def plan_route(route: dict, geom: dict, image_size: list[int], height_cm: float, wingspan_cm: float) -> list[dict]:

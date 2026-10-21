@@ -34,7 +34,7 @@ sys.path.insert(0, BACKEND)
 
 from pipeline.places import Place, PlaceRegistry, haversine_m  # noqa: E402
 from pipeline.quality import check_image_quality  # noqa: E402
-from pipeline.scan import analyze_scan, group_routes, plan_route, process_image, suggest_route  # noqa: E402
+from pipeline.scan import analyze_scan, group_routes, plan_options, plan_route, process_image, suggest_route  # noqa: E402
 
 STORE = os.environ.get("CAPITAN_STORE", os.path.join(BACKEND, "store"))
 SCANS_DIR = os.path.join(STORE, "scans")
@@ -211,6 +211,12 @@ class PathCorrectionBody(BaseModel):
     profile: Profile
 
 
+class PathChoiceBody(BaseModel):
+    optionId: str
+    shownIds: list[str]
+    profile: Profile
+
+
 class GradeBody(BaseModel):
     grade: str
 
@@ -297,6 +303,47 @@ def optimal_path(scan_id: str, route_id: str, profile: Profile) -> list[dict]:
     if override:  # a climber's correction wins until the path model learns from it
         return override
     return plan_route(route, scan["geom"], scan["imageSize"], profile.heightCm, profile.wingspanCm)
+
+
+@app.post("/scans/{scan_id}/routes/{route_id}/paths")
+def path_options(scan_id: str, route_id: str, profile: Profile) -> dict:
+    """2–3 different betas for the climber to choose between (human preference data).
+    A saved path (edit or earlier choice) is listed first as "Your path"."""
+    scan = _get_scan(scan_id)
+    route = _get_route(scan, route_id)
+    options = [{k: o[k] for k in ("id", "label", "steps")}
+               for o in plan_options(route, scan["geom"], scan["imageSize"], profile.heightCm, profile.wingspanCm)]
+    saved = scan["pathOverrides"].get(_path_key(route_id, profile))
+    if saved:
+        options = [{"id": "saved", "label": "Your path", "steps": saved}] + \
+            [o for o in options if o["steps"] != saved]
+    return {"options": options}
+
+
+@app.post("/scans/{scan_id}/routes/{route_id}/path-choice")
+def path_choice(scan_id: str, route_id: str, body: PathChoiceBody) -> list[dict]:
+    """The climber picked one of the shown betas: log it as a preference (chosen vs each
+    other shown option, with path features) and keep it as their path for this route."""
+    scan = _get_scan(scan_id)
+    route = _get_route(scan, route_id)
+    p = body.profile
+    planned = {o["id"]: o for o in plan_options(route, scan["geom"], scan["imageSize"], p.heightCm, p.wingspanCm)}
+    saved = scan["pathOverrides"].get(_path_key(route_id, p))
+    if body.optionId == "saved" and saved:
+        steps = saved
+    elif body.optionId in planned:
+        steps = planned[body.optionId]["steps"]
+    else:
+        raise HTTPException(404, f"Path option {body.optionId} not found")
+    shown = [{"id": i, "label": planned[i]["label"], "features": planned[i]["features"],
+              "hands": [s["holdId"] for s in planned[i]["steps"] if s["limb"] in ("LH", "RH")]}
+             for i in body.shownIds if i in planned]
+    with _lock:
+        scan["pathOverrides"][_path_key(route_id, p)] = steps
+        _save_scan(scan)
+        _log(scan_id, "path_choices", {"routeId": route_id, "profile": p.model_dump(),
+                                       "chosen": body.optionId, "shown": shown})
+    return steps
 
 
 @app.post("/scans/{scan_id}/routes/{route_id}/path-correction")

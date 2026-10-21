@@ -6,7 +6,8 @@
   fit          Bradley-Terry / logistic regression on path-feature differences →
                weights for pipeline/beta.py (λ by 5-fold CV over routes on train),
                scored on held-out test-split pairs. --save writes eval/planner_weights.json,
-               which the planner then uses.
+               which the planner then uses. --source human|both adds climbers' picks
+               from the app (path options screen).
   reach        Current hand reach vs shorter fractions of wingspan (--fracs), judged by
                Claude on routes where the paths differ (use --split test for held-out).
 
@@ -186,8 +187,48 @@ def load_records(split: str) -> list[dict]:
     for line in open(LOG):
         r = json.loads(line)
         gym, rest = r["route"].split("/", 1)
-        if r["winner"] and split_of(gym, rest.split("#")[0]) == split:
+        # reach-test pairs compare paths that can end at different holds (a shorter reach
+        # can stop below the top), so their total costs aren't comparable — not for fitting
+        if r["winner"] and not r["tag"].startswith("reach") and split_of(gym, rest.split("#")[0]) == split:
             out.append(r)
+    return out
+
+
+_ROUTE_CACHE: dict[str, list[BetaHold]] = {}
+
+
+def _features_now(r: dict, side: str) -> np.ndarray:
+    """Path features under the CURRENT feature set, recomputed from the logged hand
+    sequence (so judgments logged before a feature was added stay usable). Human
+    choices carry their own features, logged by the server at choice time."""
+    if r.get("stored"):
+        return np.array(r[f"features_{side}"])
+    key = r["route"]
+    if key not in _ROUTE_CACHE:
+        for split in ("train", "test"):
+            for k, _img, scan, ids in labeled_routes(split):
+                _ROUTE_CACHE[k] = route_holds(scan, ids)
+    hands = r[f"hands_{side}"][1:]  # first two hand steps share the start hold
+    return path_features(hands, _ROUTE_CACHE[key], Reach.from_body(r["height"], r["span"]))
+
+
+def load_human_records() -> list[dict]:
+    """Climbers' picks in the app (backend/store/scans/*/path_choices.jsonl): the chosen
+    path beat every other path shown with it."""
+    import glob
+    out = []
+    for path in glob.glob(os.path.join(BACKEND, "store", "scans", "*", "path_choices.jsonl")):
+        scan_id = os.path.basename(os.path.dirname(path))
+        for line in open(path):
+            e = json.loads(line)
+            shown = {o["id"]: o for o in e["shown"]}
+            if e["chosen"] not in shown:  # e.g. kept their saved path
+                continue
+            for oid, o in shown.items():
+                if oid != e["chosen"] and len(o["features"]) == len(FEATURES):
+                    out.append({"tag": "human", "route": f"human:{scan_id}/{e['routeId']}", "winner": "p",
+                                "stored": True, "features_p": shown[e["chosen"]]["features"],
+                                "features_q": o["features"]})
     return out
 
 
@@ -195,7 +236,7 @@ def diffs(records: list[dict]) -> np.ndarray:
     """Rows d = F(loser) - F(winner): Claude's choice is right when w·d > 0."""
     rows = []
     for r in records:
-        fp, fq = np.array(r["features_p"]), np.array(r["features_q"])
+        fp, fq = _features_now(r, "p"), _features_now(r, "q")
         rows.append(fq - fp if r["winner"] == "p" else fp - fq)
     return np.array(rows)
 
@@ -226,8 +267,14 @@ def agreement(D: np.ndarray, w: np.ndarray) -> float | None:
     return float(np.mean(np.where(np.abs(z) < 1e-9, 0.5, z > 0)))
 
 
-def fit_command() -> dict:
-    train, test = load_records("train"), load_records("test")
+def fit_command(source: str = "claude") -> dict:
+    human = load_human_records() if source in ("human", "both") else []
+    if source == "human":
+        train, test = human, []  # no held-out split for app data yet: judge by CV
+    else:
+        train, test = load_records("train") + human, load_records("test")
+    if not train:
+        return {"source": source, "train_judgments": 0, "note": "no preference data yet"}
     Dtr, Dte = diffs(train), diffs(test)
     routes = sorted({r["route"] for r in train})
     folds = [set(routes[i::5]) for i in range(5)]  # 5 folds by route: no pair leaks across
@@ -247,10 +294,12 @@ def fit_command() -> dict:
         "weights": [round(float(x), 4) for x in w],
         "hand_set_weights": DEFAULT_WEIGHTS.tolist(),
         "lambda": best, "cv_agreement_by_lambda": {str(k): round(v, 3) for k, v in cv.items()},
+        "source": source, "human_pairs": len(human),
         "train_judgments": len(train), "test_judgments": len(test),
         "test_agreement_learned": agreement(Dte, w),
         "test_agreement_hand_set": agreement(Dte, DEFAULT_WEIGHTS),
-        "source": "Claude (claude-opus-5-5) pairwise beta preferences, backend/eval/claude_judgments.jsonl",
+        "data": {"claude": "backend/eval/claude_judgments.jsonl (claude-opus-5-5)",
+                 "human": "backend/store/scans/*/path_choices.jsonl (app picks)"},
     }
     return result
 
@@ -331,13 +380,15 @@ def main() -> int:
     ap.add_argument("--fracs", type=float, nargs="+", default=[0.55, 0.45],
                     help="reach: shorter hand-reach fractions of wingspan to test")
     ap.add_argument("--save", action="store_true", help="fit: write backend/eval/planner_weights.json")
+    ap.add_argument("--source", default="claude", choices=["claude", "human", "both"],
+                    help="fit: Claude judgments, climbers' picks in the app, or both")
     ap.add_argument("--pairs", type=int, default=25)
     ap.add_argument("--split", default="train", choices=["train", "test"])
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--workers", type=int, default=4)
     args = ap.parse_args()
     if args.command == "fit":
-        result = fit_command()
+        result = fit_command(args.source)
         print(json.dumps(result, indent=1))
         if args.save:
             with open(WEIGHTS_FILE, "w") as f:

@@ -66,8 +66,11 @@ MAX_DROP = 0.4        # m a hand may move down (traverses)
 #   bad_hold 1 - graspability of the target hold
 #   down     1 if the move goes down (traverse)
 #   lateral  sideways distance / reach — big sideways jumps risk barn-dooring
-FEATURES = ("move", "dist", "strain", "bad_hold", "down", "lateral")
-DEFAULT_WEIGHTS = np.array([0.6, 1.0, 0.5, 0.8, 0.6, 0.4])
+#   strain2  (distance / reach)^2 — grows faster than linearly, so two short moves can
+#            beat one long one (every other term is linear in distance, which can never
+#            prefer more, shorter moves). 0 by default = the original planner.
+FEATURES = ("move", "dist", "strain", "bad_hold", "down", "lateral", "strain2")
+DEFAULT_WEIGHTS = np.array([0.6, 1.0, 0.5, 0.8, 0.6, 0.4, 0.0])
 
 
 def load_weights(path: str | None = None) -> np.ndarray:
@@ -89,7 +92,7 @@ def move_features(a: Hold, b: Hold, reach: Reach) -> np.ndarray:
     up = b.pos[1] - a.pos[1]
     lateral = abs(b.pos[0] - a.pos[0])
     r = max(reach.hand_move, 1e-6)
-    return np.array([1.0, d, d / r, 1.0 - b.grasp, 1.0 if up < 0 else 0.0, lateral / r])
+    return np.array([1.0, d, d / r, 1.0 - b.grasp, 1.0 if up < 0 else 0.0, lateral / r, (d / r) ** 2])
 
 
 def path_features(hand_path: list[str], holds: list[Hold], reach: Reach) -> np.ndarray:
