@@ -207,6 +207,33 @@ export const mockApi: CapitanApi = {
     return clone(scan);
   },
 
+  async suggestRoute(scanId: string, startHoldId: string): Promise<string[]> {
+    await delay(400 + Math.random() * 400);
+    const scan = scans[scanId];
+    const start = scan?.holds.find((h) => h.id === startHoldId);
+    if (!start) throw new Error(`Hold ${startHoldId} not found`);
+    // Mock: every hold of the tapped hold's color, start first.
+    return [start.id, ...scan.holds.filter((h) => h.color === start.color && h.id !== start.id).map((h) => h.id)];
+  },
+
+  async createRoute(scanId: string, holdIds: string[], startHoldId?: string): Promise<Route> {
+    await delay(400 + Math.random() * 400);
+    const scan = scans[scanId];
+    if (!scan) throw new Error(`Scan ${scanId} not found`);
+    const color = scan.holds.find((h) => h.id === holdIds[0])?.color ?? 'grey';
+    const n = scan.routes.filter((r) => r.custom).length + 1;
+    const route: Route = {
+      id: `${scanId}-custom-${n}`,
+      color,
+      displayName: `My route ${n}`,
+      holdIds,
+      custom: true,
+      startHoldId,
+    };
+    scan.routes.unshift(route);
+    return clone(route);
+  },
+
   async getNearbyPlaces(_lat: number, _lng: number): Promise<Place[]> {
     await delay(600 + Math.random() * 900);
     return clone(allPlaces());

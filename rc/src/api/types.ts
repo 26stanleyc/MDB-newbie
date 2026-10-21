@@ -33,6 +33,8 @@ export type Route = {
   displayName: string; // "Blue", "Route 3"
   holdIds: string[];
   communityGrade?: { grade: VGrade; votes: number };
+  custom?: boolean; // picked by the climber (tap-to-pick), not grouped by color
+  startHoldId?: string;
 };
 
 export type Place = {
@@ -134,6 +136,10 @@ export interface CapitanApi {
   submitGrade(routeId: string, grade: VGrade): Promise<Route>;
   // returns the updated scan with corrections applied
   submitCorrections(scanId: string, corrections: HoldCorrection[]): Promise<Scan>;
+  // Tap-to-pick: hold ids of the route that likely starts at the tapped hold.
+  suggestRoute(scanId: string, startHoldId: string): Promise<string[]>;
+  // Save a climber-picked route (also labeled training data). Returns the new route.
+  createRoute(scanId: string, holdIds: string[], startHoldId?: string): Promise<Route>;
   // Submit a user-corrected optimal path for (scan, route, profile) as labeled
   // training data. Phase 2 persists it so the shared path model learns from it;
   // the mock stores it so getOptimalPath returns the corrected path next time.

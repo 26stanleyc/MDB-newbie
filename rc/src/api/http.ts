@@ -94,6 +94,12 @@ export const httpApi: CapitanApi = {
   submitCorrections: (scanId: string, corrections: HoldCorrection[]): Promise<Scan> =>
     request(`/scans/${scanId}/corrections`, json({ corrections })),
 
+  suggestRoute: async (scanId: string, startHoldId: string): Promise<string[]> =>
+    (await request<{ holdIds: string[] }>(`/scans/${scanId}/routes/suggest`, json({ startHoldId }))).holdIds,
+
+  createRoute: (scanId: string, holdIds: string[], startHoldId?: string): Promise<Route> =>
+    request(`/scans/${scanId}/routes`, json({ holdIds, startHoldId })),
+
   getNearbyPlaces: (lat: number, lng: number): Promise<Place[]> =>
     request(`/places/nearby?lat=${lat}&lng=${lng}`),
 
