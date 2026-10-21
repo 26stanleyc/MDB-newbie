@@ -1,22 +1,41 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { Button, Loading, MessageState, Screen } from '@/components/ui';
-import { api } from '@/api';
+import { api, type Scan } from '@/api';
+import { weakDetection } from '@/lib/detection-check';
+import { useScanDraft } from '@/store/use-scan-draft';
 import { useScans } from '@/store/use-scans';
 
 const POLL_MS = 1200;
 
 export default function ProcessingScreen() {
-  const { scanId, uri, placeId, placeName } = useLocalSearchParams<{
+  const { scanId, uri, placeName } = useLocalSearchParams<{
     scanId: string;
     uri: string;
-    placeId: string;
     placeName: string;
   }>();
   const addScan = useScans((s) => s.addScan);
   const [failed, setFailed] = useState(false);
+  // Detections too weak to trust: suggest a retake before showing results.
+  const [weak, setWeak] = useState<{ scan: Scan; reason: string } | null>(null);
+  const precise = useScanDraft((s) => s.mode) === 'precise';
+
+  // Save the scan and show its routes.
+  const finish = useCallback(
+    (scan: Scan) => {
+      addScan({
+        scanId: scan.id,
+        placeId: scan.placeId, // the server's id: a gym picked from Google gets a permanent one
+        placeName,
+        imageUri: scan.imageUri,
+        createdAt: scan.createdAt,
+      });
+      router.replace({ pathname: '/scan/results', params: { scanId, uri, placeName } });
+    },
+    [scanId, uri, placeName, addScan],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -30,17 +49,9 @@ export default function ProcessingScreen() {
           return;
         }
         if (scan.status === 'done') {
-          addScan({
-            scanId: scan.id,
-            placeId: scan.placeId, // the server's id: a gym picked from Google gets a permanent one
-            placeName,
-            imageUri: scan.imageUri,
-            createdAt: scan.createdAt,
-          });
-          router.replace({
-            pathname: '/scan/results',
-            params: { scanId, uri, placeName },
-          });
+          const reason = weakDetection(scan.holds);
+          if (reason) setWeak({ scan, reason });
+          else finish(scan);
           return;
         }
         await new Promise((r) => setTimeout(r, POLL_MS));
@@ -49,7 +60,24 @@ export default function ProcessingScreen() {
     return () => {
       cancelled = true;
     };
-  }, [scanId, uri, placeId, placeName, addScan]);
+  }, [scanId, finish]);
+
+  if (weak) {
+    return (
+      <Screen>
+        <View style={styles.body}>
+          <MessageState
+            icon="camera.viewfinder"
+            title={precise ? 'Retake your photos?' : 'Retake the photo?'}
+            message={`${weak.reason} Stand square to the wall with the whole route in frame and even light.`}
+            actionLabel={precise ? 'Retake photos' : 'Retake photo'}
+            onAction={() => router.dismissTo('/scan/camera')}
+          />
+        </View>
+        <Button title="See results anyway" variant="ghost" onPress={() => finish(weak.scan)} />
+      </Screen>
+    );
+  }
 
   if (failed) {
     return (
