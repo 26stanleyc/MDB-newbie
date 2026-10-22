@@ -1,5 +1,5 @@
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { router } from 'expo-router';
+import { router, useIsFocused } from 'expo-router';
 import { DeviceMotion } from 'expo-sensors';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
@@ -31,6 +31,8 @@ const PRECISE_MAX = 5; // cap — more is too much to capture; pick angles that 
 export default function CameraScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
+  // Screens pushed on top keep this one mounted; only run the camera while it's in front.
+  const focused = useIsFocused();
   const [showTips, setShowTips] = useState(true);
   const [capturing, setCapturing] = useState(false);
   const mode = useScanDraft((s) => s.mode);
@@ -141,7 +143,9 @@ export default function CameraScreen() {
 
   return (
     <View style={styles.root}>
-      <CameraView ref={cameraRef} style={StyleSheet.absoluteFill} facing="back" />
+      {focused ? (
+        <CameraView ref={cameraRef} style={StyleSheet.absoluteFill} facing="back" />
+      ) : null}
 
       {/* Framing guide */}
       <View pointerEvents="none" style={styles.guideWrap}>
