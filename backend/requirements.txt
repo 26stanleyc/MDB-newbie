@@ -1,0 +1,24 @@
+# M7 quality, M10 routes, M11 geometry
+numpy
+opencv-python-headless
+scikit-learn
+pillow
+matplotlib
+# M9 hold detection (Mask R-CNN on MPS)
+torch
+torchvision
+# Per-hold relief (Depth Anything V2) + wall normals (Marigold)
+transformers
+diffusers
+accelerate
+# Multi-view point clouds
+trimesh
+# Server (backend/server/app.py)
+fastapi
+uvicorn
+python-multipart
+# Claude judge for planner weights (scripts/judge_paths.py)
+anthropic
+# Dataset download (data.py)
+kagglehub
+# Not installed locally — run on Colab: depth_anything_3 (backend/colab), dust3r (backend/multiview)

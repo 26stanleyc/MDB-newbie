@@ -1,0 +1,71 @@
+{
+  "run": "baseline: v1 detector (trained on all bh), palette colors, one route per color, planner v1",
+  "date": "2026-10-20T16:25:59",
+  "ckpt": "backend/artifacts/m9_maskrcnn.pt",
+  "split": "test",
+  "images": 8,
+  "detection": {
+    "overall": {
+      "images_gt_holds": 439,
+      "mask_AP50": 86.4,
+      "mask_AP": 67.9,
+      "precision@cutoff": 0.918,
+      "recall@cutoff": 0.838,
+      "small_recall@cutoff": 0.698,
+      "matched_IoU": 0.883
+    },
+    "bh": {
+      "images_gt_holds": 238,
+      "mask_AP50": 88.3,
+      "mask_AP": 68.4,
+      "precision@cutoff": 0.932,
+      "recall@cutoff": 0.861,
+      "small_recall@cutoff": 0.763,
+      "matched_IoU": 0.878
+    },
+    "bh-phone": {
+      "images_gt_holds": 73,
+      "mask_AP50": 96.8,
+      "mask_AP": 80.8,
+      "precision@cutoff": 0.886,
+      "recall@cutoff": 0.959,
+      "small_recall@cutoff": 0.9,
+      "matched_IoU": 0.906
+    },
+    "sm": {
+      "images_gt_holds": 128,
+      "mask_AP50": 76.7,
+      "mask_AP": 59.9,
+      "precision@cutoff": 0.912,
+      "recall@cutoff": 0.727,
+      "small_recall@cutoff": 0.527,
+      "matched_IoU": 0.876
+    }
+  },
+  "colors_on_labeled_holds": {
+    "routes": 24,
+    "hold_color_accuracy": 0.362,
+    "route_color_accuracy": 0.375
+  },
+  "planner_on_labeled_routes": {
+    "routes": 20,
+    "reached_top": 0.617,
+    "taller_never_more_moves": 0.8,
+    "mean_moves_by_height": {
+      "155": 2.3,
+      "170": 2.45,
+      "185": 2.15
+    },
+    "mean_stability": 0.61,
+    "feet_per_hand_move": 0.425,
+    "note": "mean_moves_by_height corrected 2026-10-21 (-1): the original count included the second start hand."
+  },
+  "end_to_end": {
+    "routes": 24,
+    "route_holds_found": 0.865,
+    "found_holds_color_ok": 0.447,
+    "mean_route_IoU": 0.269,
+    "routes_recovered": 0.125,
+    "note": "route_holds_found/IoU/recovered re-scored 2026-10-20 with the current metric definitions; planner numbers above are from the original planner v1 run"
+  }
+}

@@ -1,0 +1,89 @@
+{
+  "run": "v2 detector + knn colors (route + mosaic hold labels) + route split + planner v2 + tap-to-pick",
+  "date": "2026-10-20T21:17:03",
+  "ckpt": "backend/artifacts/m9_train_split.pt",
+  "split": "test",
+  "images": 8,
+  "detection": {
+    "overall": {
+      "images_gt_holds": 439,
+      "mask_AP50": 86.6,
+      "mask_AP": 64.0,
+      "precision@cutoff": 0.929,
+      "recall@cutoff": 0.863,
+      "small_recall@cutoff": 0.747,
+      "matched_IoU": 0.861
+    },
+    "bh": {
+      "images_gt_holds": 238,
+      "mask_AP50": 85.9,
+      "mask_AP": 63.0,
+      "precision@cutoff": 0.936,
+      "recall@cutoff": 0.866,
+      "small_recall@cutoff": 0.779,
+      "matched_IoU": 0.856
+    },
+    "bh-phone": {
+      "images_gt_holds": 73,
+      "mask_AP50": 98.4,
+      "mask_AP": 80.4,
+      "precision@cutoff": 0.959,
+      "recall@cutoff": 0.973,
+      "small_recall@cutoff": 0.9,
+      "matched_IoU": 0.897
+    },
+    "sm": {
+      "images_gt_holds": 128,
+      "mask_AP50": 81.1,
+      "mask_AP": 56.9,
+      "precision@cutoff": 0.895,
+      "recall@cutoff": 0.797,
+      "small_recall@cutoff": 0.649,
+      "matched_IoU": 0.846
+    }
+  },
+  "colors_on_labeled_holds": {
+    "routes": 24,
+    "hold_color_accuracy": 0.54,
+    "route_color_accuracy": 0.625
+  },
+  "colors_on_hold_labels": {
+    "mosaic": {
+      "holds": 132,
+      "hold_color_accuracy": 0.955
+    }
+  },
+  "planner_on_labeled_routes": {
+    "routes": 20,
+    "reached_top": 0.733,
+    "taller_never_more_moves": 0.9,
+    "mean_moves_by_height": {
+      "155": 1.75,
+      "170": 1.45,
+      "185": 1.25
+    },
+    "mean_stability": 0.818,
+    "feet_per_hand_move": 0.806
+  },
+  "end_to_end": {
+    "routes": 24,
+    "route_holds_found": 0.877,
+    "found_holds_color_ok": 0.559,
+    "mean_route_IoU": 0.429,
+    "tap_start_route_IoU": 0.388,
+    "tap_start_IoU>=0.5": 0.417,
+    "routes_recovered": 0.292,
+    "planner_on_recovered_routes": {
+      "routes": 5,
+      "reached_top": 0.867,
+      "taller_never_more_moves": 0.8,
+      "mean_moves_by_height": {
+        "155": 1.8,
+        "170": 1.4,
+        "185": 1.6
+      },
+      "mean_stability": 0.913,
+      "feet_per_hand_move": 1.0
+    }
+  }
+}

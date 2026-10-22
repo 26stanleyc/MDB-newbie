@@ -10,3 +10,26 @@ __pycache__/
 
 # Kaggle / downloaded datasets
 *.pkl
+
+# Vendored repo with its own git history
+backend/multiview/dust3r/
+
+# Dataset, model weights, and pipeline outputs (large; regenerate or fetch)
+data/
+backend/artifacts/
+backend/colab/depth/
+backend/multiview/out/
+backend/multiview/clouds/
+*.pt
+*.pth
+*.npz
+*.npy
+*.ply
+*.zip
+backend/multiview/sets/*/images/
+
+# Secrets (API keys)
+.env
+
+# Backend server data (uploads + corrections)
+backend/store/

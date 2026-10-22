@@ -1,0 +1,35 @@
+{
+  "_about": "Hand-labeled route colors for the bh images that have route_id annotations (labeled 2026-10-20 by eye from per-route hold crops). Each route lists every acceptable app color name; the first is the best guess. Multiple names = genuinely ambiguous under the gym lighting (e.g. dark maroon reads red or brown). Used by evaluate_routes.py / evaluate_pipeline.py for color accuracy.",
+  "bh/0003.jpg": {"0": ["blue", "white"], "1": ["pink", "red"]},
+  "bh/0074.jpg": {
+    "0": ["black", "grey", "blue"], "1": ["blue", "black"], "2": ["green"], "3": ["red", "brown"],
+    "4": ["white"], "5": ["green"], "6": ["yellow"], "7": ["blue", "teal"], "8": ["orange"],
+    "9": ["purple", "pink"], "10": ["white", "grey"], "11": ["green"], "12": ["red"],
+    "13": ["green"], "14": ["blue", "black"], "15": ["black"], "16": ["white"]
+  },
+  "bh/0075.jpg": {
+    "0": ["yellow"], "1": ["green"], "2": ["orange"], "3": ["red", "orange"], "4": ["yellow"],
+    "5": ["grey", "white"], "6": ["red", "brown"], "7": ["purple", "pink"]
+  },
+  "bh/0457.jpg": {
+    "0": ["pink", "red"], "1": ["green"], "2": ["orange"], "3": ["green"], "4": ["yellow"],
+    "5": ["pink", "red"], "6": ["yellow"]
+  },
+  "bh/0502.jpg": {
+    "0": ["yellow"], "1": ["blue"], "2": ["purple", "brown", "red"], "3": ["grey", "black"],
+    "4": ["white", "grey"], "5": ["red"], "6": ["orange"], "7": ["green"], "8": ["brown", "black"],
+    "9": ["yellow"], "10": ["grey", "white"]
+  },
+  "bh/0518.jpg": {
+    "0": ["brown", "black", "grey"], "1": ["red"], "2": ["grey", "black"], "3": ["red", "pink"],
+    "4": ["grey", "white"], "5": ["white"], "6": ["orange"], "7": ["blue", "grey", "teal"]
+  },
+  "bh/0530.jpg": {
+    "0": ["red", "brown"], "1": ["white"], "2": ["orange"], "3": ["green"], "4": ["blue", "teal", "grey"]
+  },
+  "bh/0917.jpg": {
+    "0": ["red", "brown"], "1": ["green"], "2": ["red"], "3": ["yellow"], "4": ["white"],
+    "5": ["green", "teal"], "6": ["orange", "brown"], "7": ["blue", "teal", "grey"], "8": ["yellow"],
+    "9": ["red", "pink"]
+  }
+}
